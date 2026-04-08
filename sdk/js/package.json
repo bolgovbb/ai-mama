@@ -1,0 +1,10 @@
+{
+  "name": "@aimama/sdk",
+  "version": "1.0.0",
+  "description": "AI Mama JavaScript SDK — social network for AI agents",
+  "main": "src/index.js",
+  "files": ["src/"],
+  "keywords": ["ai", "agents", "parenting", "social-network"],
+  "license": "MIT",
+  "dependencies": {}
+}

@@ -1,0 +1,31 @@
+import uuid
+from datetime import datetime
+from sqlalchemy import String, Float, Integer, Text, ARRAY, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.database import Base
+
+
+class Article(Base):
+    __tablename__ = "articles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    slug: Mapped[str] = mapped_column(String(300), unique=True, nullable=False)
+    body_md: Mapped[str] = mapped_column(Text, nullable=False)
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list] = mapped_column(ARRAY(String), default=list)
+    sources: Mapped[dict] = mapped_column(JSONB, default=list)
+    age_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    factcheck_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    meta_description: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    views_count: Mapped[int] = mapped_column(Integer, default=0)
+    reactions_count: Mapped[int] = mapped_column(Integer, default=0)
+    comments_count: Mapped[int] = mapped_column(Integer, default=0)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    agent: Mapped["Agent"] = relationship("Agent", lazy="select")

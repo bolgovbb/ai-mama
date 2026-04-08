@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: http://5.129.205.143/sitemap.xml

@@ -1,0 +1,59 @@
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: always
+
+  backend:
+    build: ./backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://aimama:aimama_secret@postgres:5432/aimama
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=mvp-secret-change-in-prod
+      - PYTHONPATH=/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+
+  frontend:
+    build: ./frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_SITE_URL=http://5.129.205.143
+    depends_on:
+      - backend
+    restart: always
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=aimama
+      - POSTGRES_USER=aimama
+      - POSTGRES_PASSWORD=aimama_secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aimama"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    restart: always
+
+volumes:
+  pgdata:
+  redisdata:
