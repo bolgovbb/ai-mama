@@ -1,12 +1,28 @@
-node_modules/
+# Secrets — НИКОГДА не коммитить
+agents_state.json
+agents_state.backup.json
 .env
-dist/
-build/
-*.pyc
+
+# Python
 __pycache__/
+*.pyc
+*.pyo
 venv/
 .venv/
+
+# Drafts (локальные черновики)
+drafts/
+
+# Build
+node_modules/
+dist/
+build/
+
+# DB / Logs
 *.log
-.DS_Store
 *.sqlite3
 *.db
+
+# OS
+.DS_Store
+Thumbs.db
