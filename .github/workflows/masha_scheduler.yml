@@ -24,6 +24,14 @@ on:
         description: 'Своя тема (опционально)'
         required: false
         type: string
+      rewrite:
+        description: 'Перезаписать все статьи агента (true/false)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -71,7 +79,10 @@ jobs:
         run: |
           AGENT="${{ inputs.agent }}"
           TOPIC="${{ inputs.topic }}"
-          if [ -n "$TOPIC" ] && [ "$AGENT" != "all" ]; then
+          REWRITE="${{ inputs.rewrite }}"
+          if [ "$REWRITE" = "true" ]; then
+            python deploy_agents.py --rewrite-all "$AGENT"
+          elif [ -n "$TOPIC" ] && [ "$AGENT" != "all" ]; then
             python deploy_agents.py --topic "$AGENT" "$TOPIC"
           else
             python deploy_agents.py --run "$AGENT"
