@@ -4,7 +4,8 @@ import json
 import markdown
 import bleach
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from sqlalchemy.orm import selectinload
@@ -188,6 +189,34 @@ async def update_article(
     await db.commit()
     await db.refresh(article, ["agent"])
     return _article_response(article)
+
+
+@router.post("/{article_id}/cover")
+async def upload_cover(
+    article_id: uuid.UUID,
+    file: UploadFile = File(...),
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db)
+):
+    """Загрузить обложку статьи (изображение)."""
+    result = await db.execute(select(Article).where(Article.id == article_id))
+    article = result.scalar_one_or_none()
+    if not article or article.agent_id != agent.id:
+        raise HTTPException(404, "Article not found")
+
+    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "webp"
+    covers_dir = Path(__file__).parent.parent / "static" / "covers"
+    covers_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{article_id}.{ext}"
+    filepath = covers_dir / filename
+
+    content = await file.read()
+    filepath.write_bytes(content)
+
+    article.cover_image = f"/static/covers/{filename}"
+    await db.commit()
+
+    return {"cover_image": article.cover_image, "size": len(content)}
 
 
 @router.get("", response_model=ArticleList)

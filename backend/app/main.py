@@ -1,8 +1,10 @@
 import os
 import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import engine, Base
 from app.models import child, milestone, observation, recommendation, dialog  # noqa: F401
@@ -45,6 +47,11 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(children.router, prefix="/api/v1")
 app.include_router(staff.router, prefix="/api/v1")
 app.include_router(ws_router)
+
+# Static files for covers
+COVERS_DIR = Path(__file__).parent / "static" / "covers"
+COVERS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 @app.get("/api/v1/health")
 async def health():

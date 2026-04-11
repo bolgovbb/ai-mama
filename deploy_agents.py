@@ -19,15 +19,17 @@ import anthropic
 import requests
 from datetime import datetime
 from pathlib import Path
+import replicate
 from system_prompts import AGENTS, STAFF_AGENTS
 
 # ─────────────────────────────────────────────
 # КОНФИГ
 # ─────────────────────────────────────────────
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-TG_BOT_TOKEN      = os.getenv("TG_BOT_TOKEN", "")
-TG_CHAT_ID        = os.getenv("TG_CHAT_ID", "")
+ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
+TG_BOT_TOKEN        = os.getenv("TG_BOT_TOKEN", "")
+TG_CHAT_ID          = os.getenv("TG_CHAT_ID", "")
 
 BASE_URL    = "https://mama.kindar.app"
 BETA_HEADER = "managed-agents-2026-04-01"
@@ -243,6 +245,98 @@ def publish_to_platform(slug, title, body_md, tags, sources, api_key):
         print(f"  ⚠️  Submit failed ({r2.status_code}), article stays as draft")
         return article
 
+# ─────────────────────────────────────────────
+# ГЕНЕРАЦИЯ ОБЛОЖКИ (Replicate Flux)
+# ─────────────────────────────────────────────
+
+COVER_STYLE = "soft pastel flat illustration, modern minimalist, warm motherhood theme, no text, no letters, no words"
+
+COVER_THEMES = {
+    "motherhood": "pregnant woman, mother and baby, gentle nurturing scene",
+    "parenting": "parent playing with toddler, child development, colorful toys",
+    "health": "pediatric care, healthy baby, medical wellness, stethoscope",
+}
+
+
+def _make_cover_prompt(title: str, tags: list[str], slug: str = "") -> str:
+    """Генерирует prompt для Flux на основе заголовка и тегов."""
+    theme = COVER_THEMES.get(slug, "mother and child, family care")
+    # Translate key concepts from title to English for better Flux results
+    keywords = title.lower()
+    topic_hints = []
+    if any(w in keywords for w in ["прикорм", "питание", "еда"]):
+        topic_hints.append("baby food, colorful vegetables and fruits")
+    elif any(w in keywords for w in ["сон", "регресс"]):
+        topic_hints.append("sleeping baby, peaceful nursery, moon and stars")
+    elif any(w in keywords for w in ["роды", "родов", "родзал"]):
+        topic_hints.append("birth preparation, hospital, supportive partner")
+    elif any(w in keywords for w in ["токсикоз", "беременн"]):
+        topic_hints.append("pregnancy, expectant mother, prenatal care")
+    elif any(w in keywords for w in ["вакцин", "привив"]):
+        topic_hints.append("vaccination, pediatric clinic, protective shield")
+    elif any(w in keywords for w in ["кризис", "истерик"]):
+        topic_hints.append("toddler emotions, patience, gentle parenting")
+    elif any(w in keywords for w in ["депресс", "выгоран", "тревог"]):
+        topic_hints.append("mental health, self-care, emotional support")
+    elif any(w in keywords for w in ["развити", "моторик", "речь", "интеллект"]):
+        topic_hints.append("child development milestones, educational play")
+    elif any(w in keywords for w in ["грудн", "лактац", "вскармлив"]):
+        topic_hints.append("breastfeeding, nursing mother, bonding")
+    else:
+        topic_hints.append(theme)
+
+    return f"{', '.join(topic_hints)}, {COVER_STYLE}, 1200x630 aspect ratio, wide banner composition"
+
+
+def generate_cover_image(article_id: str, title: str, tags: list[str], api_key: str, slug: str = "") -> str | None:
+    """Генерирует обложку через Replicate Flux и загружает на сервер."""
+    if not REPLICATE_API_TOKEN:
+        print("  ⚠️  REPLICATE_API_TOKEN не задан — обложка не сгенерирована")
+        return None
+
+    prompt = _make_cover_prompt(title, tags, slug)
+    print(f"  🎨 Генерируем обложку: {prompt[:80]}...")
+
+    try:
+        output = replicate.run(
+            "black-forest-labs/flux-schnell",
+            input={
+                "prompt": prompt,
+                "aspect_ratio": "16:9",
+                "output_format": "webp",
+                "output_quality": 85,
+            }
+        )
+
+        # Flux returns a list of FileOutput objects
+        if output and len(output) > 0:
+            image_url = str(output[0])
+            # Download image
+            img_response = requests.get(image_url, timeout=30)
+            img_response.raise_for_status()
+
+            # Upload to platform
+            files = {"file": (f"{article_id}.webp", img_response.content, "image/webp")}
+            r = requests.post(
+                f"{BASE_URL}/api/v1/articles/{article_id}/cover",
+                files=files,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=30
+            )
+            if r.status_code == 200:
+                cover_url = r.json().get("cover_image", "")
+                print(f"  ✅ Обложка: {cover_url}")
+                return cover_url
+            else:
+                print(f"  ⚠️  Upload failed: {r.status_code}")
+        else:
+            print("  ⚠️  Flux вернул пустой результат")
+    except Exception as e:
+        print(f"  ⚠️  Ошибка генерации обложки: {e}")
+
+    return None
+
+
 def save_as_draft(body_md, title, slug):
     Path("drafts").mkdir(exist_ok=True)
     date  = datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -438,9 +532,14 @@ sources — реальные URL из твоих поисков.
             sources=all_sources,
             api_key=platform_key,
         )
+        article_id = result.get("id")
         score  = result.get("factcheck_score", 0)
         status = result.get("status")
         print(f"  📊 Factcheck score: {score}")
+
+        # Generate cover image
+        if article_id:
+            generate_cover_image(article_id, article["title"], tags, platform_key, slug)
 
         if status == "published":
             print(f"  ✅ Опубликовано: {BASE_URL}/articles/{result.get('slug', '')}")
