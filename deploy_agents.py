@@ -19,6 +19,7 @@ import anthropic
 import requests
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, List
 import replicate
 from system_prompts import AGENTS, STAFF_AGENTS
 
@@ -258,7 +259,7 @@ COVER_THEMES = {
 }
 
 
-def _make_cover_prompt(title: str, tags: list[str], slug: str = "") -> str:
+def _make_cover_prompt(title: str, tags: List[str], slug: str = "") -> str:
     """Генерирует prompt для Flux на основе заголовка и тегов."""
     theme = COVER_THEMES.get(slug, "mother and child, family care")
     # Translate key concepts from title to English for better Flux results
@@ -288,7 +289,7 @@ def _make_cover_prompt(title: str, tags: list[str], slug: str = "") -> str:
     return f"{', '.join(topic_hints)}, {COVER_STYLE}, 1200x630 aspect ratio, wide banner composition"
 
 
-def generate_cover_image(article_id: str, title: str, tags: list[str], api_key: str, slug: str = "") -> str | None:
+def generate_cover_image(article_id: str, title: str, tags: List[str], api_key: str, slug: str = "") -> Optional[str]:
     """Генерирует обложку через Replicate Flux и загружает на сервер."""
     if not REPLICATE_API_TOKEN:
         print("  ⚠️  REPLICATE_API_TOKEN не задан — обложка не сгенерирована")
@@ -357,6 +358,24 @@ def save_as_draft(body_md, title, slug):
     fname = Path("drafts") / f"{date}_{slug}.md"
     fname.write_text(f"# {title}\n\n{body_md}", encoding="utf-8")
     print(f"  💾 Сохранено в: {fname}")
+
+def _normalize_sources(sources: list) -> list:
+    """Конвертирует list[str] или list[dict] в list[dict] для API."""
+    result = []
+    seen = set()
+    for s in sources:
+        if isinstance(s, str):
+            url = s.strip()
+            if url and url not in seen:
+                seen.add(url)
+                result.append({"url": url, "title": ""})
+        elif isinstance(s, dict):
+            url = s.get("url", "").strip()
+            if url and url not in seen:
+                seen.add(url)
+                result.append(s)
+    return result
+
 
 def extract_article_json(text, fallback_title):
     match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
@@ -534,7 +553,7 @@ sources — реальные URL из твоих поисков.
         notify_telegram(agent_name, topic, error="Ошибка парсинга")
         return
 
-    all_sources = list(set(article.get("sources", []) + sources))
+    all_sources = _normalize_sources(article.get("sources", []) + sources)
     print(f"  📤 Публикуем: {article['title'][:60]}...")
 
     try:
@@ -617,21 +636,42 @@ def rewrite_articles(slug):
     tags       = AGENT_TAGS[slug]
     sources    = TRUSTED_SOURCES[slug]
 
-    # Получаем список статей
-    r    = requests.get(
-        f"{BASE_URL}/api/v1/articles/mine",
+    # Получаем список статей из ОБОИХ эндпоинтов
+    agent_platform_id = state.get(f"platform_agent_id_{slug}")
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    all_articles = []
+    seen_ids = set()
+
+    # 1. Опубликованные (публичный эндпоинт, фильтр по agent_id)
+    r = requests.get(f"{BASE_URL}/api/v1/articles", params={"limit": 50}, timeout=15)
+    if r.status_code == 200:
+        for a in r.json().get("items", []):
+            if (a.get("author") or {}).get("id") == agent_platform_id:
+                if a["id"] not in seen_ids:
+                    seen_ids.add(a["id"])
+                    all_articles.append(a)
+
+    # 2. На доработке (авторизованный эндпоинт)
+    r2 = requests.get(
+        f"{BASE_URL}/api/v1/articles/my/revisions",
         headers={"Authorization": f"Bearer {api_key}"},
-        params={"limit": 50},
         timeout=15
     )
-    data = r.json()
-    articles = data.get("items", [])
+    if r2.status_code == 200:
+        for a in r2.json():
+            if a["id"] not in seen_ids:
+                seen_ids.add(a["id"])
+                all_articles.append(a)
+
+    # Фильтруем — нельзя редактировать статьи в review
+    articles = [a for a in all_articles if a.get("status") != "review"]
+    skipped = len(all_articles) - len(articles)
 
     if not articles:
-        print(f"  Нет статей для '{agent_name}'")
+        print(f"  Нет статей для '{agent_name}'" + (f" ({skipped} в review — пропущены)" if skipped else ""))
         return
 
-    print(f"\n🔄 Перезапись статей '{agent_name}' ({len(articles)} шт.)...\n")
+    print(f"\n🔄 Перезапись статей '{agent_name}' ({len(articles)} шт.){f', {skipped} в review пропущены' if skipped else ''}...\n")
 
     for article in articles:
         article_id    = article["id"]
@@ -732,26 +772,23 @@ def rewrite_articles(slug):
             print(f"     ✗ Не удалось распарсить — пропускаем")
             continue
 
-        all_sources = list(set(new_article.get("sources", []) + sources))
+        all_sources = _normalize_sources(new_article.get("sources", []) + sources)
 
-        # Обновляем статью через PATCH + auto_republish
+        # Обновляем статью через PATCH → POST /submit (отправка на review)
         try:
             clean_body = new_article["body_md"].replace("\x00", "")
             clean_title = new_article["title"].replace("\x00", "")
-            clean_sources = [s for s in all_sources if isinstance(s, str)]
 
-            payload = {
+            patch_payload = {
                 "title": clean_title,
                 "body_md": clean_body,
                 "tags": tags,
-                "sources": clean_sources,
-                "auto_republish": True,
+                "sources": all_sources,
             }
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
             r = requests.patch(
                 f"{BASE_URL}/api/v1/articles/{article_id}",
-                json=payload,
+                json=patch_payload,
                 headers=headers,
                 timeout=60
             )
@@ -759,12 +796,27 @@ def rewrite_articles(slug):
                 print(f"\n     DEBUG PATCH: {r.status_code} {r.text[:300]}")
             r.raise_for_status()
             result = r.json()
-            score  = result.get("factcheck_score", "?")
-            status = result.get("status", "?")
-            icon   = "✅" if status == "published" else "⚠️"
-            print(f"     {icon} Score: {score} | {status}")
-            if status == "published":
-                print(f"        {BASE_URL}/articles/{result.get('slug', '')}")
+            print(f"     ✏️  PATCH OK | status={result.get('status')}")
+
+            # Отправляем на проверку (factcheck → review)
+            r2 = requests.post(
+                f"{BASE_URL}/api/v1/articles/{article_id}/submit",
+                headers=headers,
+                timeout=60
+            )
+            if r2.status_code == 200:
+                submit_result = r2.json()
+                score  = submit_result.get("factcheck_score", "?")
+                status = submit_result.get("status", "?")
+                icon   = "✅" if status == "review" else ("📝" if status == "draft" else "⚠️")
+                print(f"     {icon} Submit: score={score} | {status}")
+                if status == "draft":
+                    note = submit_result.get("moderation_note", "")
+                    print(f"        ⚠️  Score слишком низкий: {note[:100]}")
+            elif r2.status_code == 400:
+                print(f"     ⚠️  Submit: {r2.text[:200]}")
+            else:
+                print(f"     ✗ Submit failed: {r2.status_code}")
         except Exception as e:
             print(f"     ✗ Ошибка: {e}")
 
@@ -777,23 +829,58 @@ def rewrite_articles(slug):
 def list_articles(slug):
     state   = load_state()
     api_key = state.get(f"platform_api_key_{slug}")
+    agent_id = state.get(f"platform_agent_id_{slug}")
     if not api_key:
         print(f"✗ Нет api_key для '{slug}'")
         return
 
-    r    = requests.get(
-        f"{BASE_URL}/api/v1/articles/mine",
-        headers={"Authorization": f"Bearer {api_key}"},
-        params={"limit": 10},
+    # GET /articles — публичный список, фильтруем по agent_id на клиенте
+    # + GET /articles/my/revisions — статьи на доработке
+    all_articles = []
+
+    # 1. Опубликованные (публичный эндпоинт)
+    r = requests.get(
+        f"{BASE_URL}/api/v1/articles",
+        params={"limit": 50},
         timeout=15
     )
-    data = r.json()
-    print(f"\n📋 Статьи '{AGENTS[slug]['name']}' (всего: {data.get('total', 0)}):\n")
-    for a in data.get("items", []):
+    if r.status_code == 200:
+        data = r.json()
+        for a in data.get("items", []):
+            author = a.get("author") or {}
+            if author.get("id") == agent_id:
+                a["_source"] = "published"
+                all_articles.append(a)
+
+    # 2. На доработке (авторизованный эндпоинт)
+    r2 = requests.get(
+        f"{BASE_URL}/api/v1/articles/my/revisions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=15
+    )
+    if r2.status_code == 200:
+        for a in r2.json():
+            a["_source"] = "revision"
+            all_articles.append(a)
+
+    print(f"\n📋 Статьи '{AGENTS[slug]['name']}' (всего: {len(all_articles)}):\n")
+    for a in all_articles:
         status = a.get("status", "?")
         score  = a.get("factcheck_score", "?")
-        icon   = "✅" if status == "published" else ("⚠️" if status == "flagged" else "📝")
-        print(f"  {icon} [{score:>5}] {a.get('title', '?')[:60]}")
+        mod    = a.get("moderation_status", "")
+        if status == "published" and mod != "rejected":
+            icon = "✅"
+        elif status == "review":
+            icon = "🔍"
+        elif status == "revision":
+            icon = "✏️"
+        elif status == "flagged" or mod == "rejected":
+            icon = "⚠️"
+        else:
+            icon = "📝"
+        score_str = f"{score:>5}" if isinstance(score, (int, float)) else f"{'?':>5}"
+        print(f"  {icon} [{score_str}] {a.get('title', '?')[:60]}")
+        print(f"           status={status} mod={mod}")
         if status == "published":
             print(f"           {BASE_URL}/articles/{a.get('slug', '')}")
 
