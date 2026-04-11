@@ -1125,39 +1125,52 @@ def generate_covers():
     """Генерирует обложки Flux для всех статей без обложки (или с SVG-обложкой)."""
     state = load_state()
 
+    # Используем staff API для получения всех статей
+    staff_key = state.get("platform_api_key_editor")
+    if not staff_key:
+        print("✗ Нет staff api_key. Запусти --register-staff.")
+        return
+
+    # Получаем все published статьи
+    r = requests.get(
+        f"{BASE_URL}/api/v1/articles",
+        params={"limit": 100},
+        timeout=15
+    )
+    if r.status_code != 200:
+        print(f"✗ Ошибка API: {r.status_code}")
+        return
+
+    articles = r.json().get("items", [])
+
+    # Filter: no cover or SVG cover
+    need_cover = [a for a in articles if not a.get("cover_image") or "/cover-image" in (a.get("cover_image") or "")]
+
+    if not need_cover:
+        print("  ✓ Все статьи с обложками")
+        return
+
+    print(f"\n🎨 {len(need_cover)} статей без обложки\n")
+
+    # Маппинг agent_id → api_key для upload
+    agent_keys = {}
     for slug in AGENTS:
+        agent_id = state.get(f"platform_agent_id_{slug}")
         api_key = state.get(f"platform_api_key_{slug}")
-        if not api_key:
-            continue
+        if agent_id and api_key:
+            agent_keys[agent_id] = (api_key, slug)
 
-        agent_name = AGENTS[slug]["name"]
-        headers = {"Authorization": f"Bearer {api_key}"}
+    for article in need_cover:
+        article_id = article["id"]
+        agent_id = article.get("agent_id", "")
+        title = article["title"]
+        tags = article.get("tags", [])
 
-        r = requests.get(
-            f"{BASE_URL}/api/v1/articles/mine",
-            headers=headers,
-            params={"limit": 50},
-            timeout=15
-        )
-        if r.status_code != 200:
-            continue
+        # Найти api_key автора для upload
+        api_key, slug = agent_keys.get(agent_id, (staff_key, ""))
 
-        articles = r.json().get("items", [])
-        # Filter: no cover or SVG cover
-        need_cover = [a for a in articles if not a.get("cover_image") or "/cover-image" in (a.get("cover_image") or "")]
-
-        if not need_cover:
-            print(f"  ✓ {agent_name}: все статьи с обложками")
-            continue
-
-        print(f"\n🎨 {agent_name}: {len(need_cover)} статей без обложки\n")
-
-        for article in need_cover:
-            article_id = article["id"]
-            title = article["title"]
-            tags = article.get("tags", [])
-            print(f"  📝 {title[:60]}...")
-            generate_cover_image(article_id, title, tags, api_key, slug)
+        print(f"  📝 {title[:60]}...")
+        generate_cover_image(article_id, title, tags, api_key, slug)
 
     print(f"\n✅ Генерация обложек завершена.")
 

@@ -198,11 +198,14 @@ async def upload_cover(
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db)
 ):
-    """Загрузить обложку статьи (изображение)."""
+    """Загрузить обложку статьи. Автор или staff."""
+    from app.api.deps import STAFF_ROLES
     result = await db.execute(select(Article).where(Article.id == article_id))
     article = result.scalar_one_or_none()
-    if not article or article.agent_id != agent.id:
+    if not article:
         raise HTTPException(404, "Article not found")
+    if article.agent_id != agent.id and agent.role not in STAFF_ROLES:
+        raise HTTPException(403, "Not your article")
 
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "webp"
     covers_dir = Path(__file__).parent.parent / "static" / "covers"
