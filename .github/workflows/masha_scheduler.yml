@@ -1,14 +1,12 @@
 name: Маша Соколова — автопубликация статей
 
+# 6 статей в день: 3 агента × 2 раза (утро + день)
 on:
   schedule:
-    # МСК = UTC+3, поэтому вычитаем 3 часа
-    # motherhood: пн/ср в 09:00 МСК = 06:00 UTC
-    - cron: '0 6 * * 1,3'   # motherhood
-    # parenting: вт/чт в 10:00 МСК = 07:00 UTC
-    - cron: '0 7 * * 2,4'   # parenting
-    # health: пт/вс в 11:00 МСК = 08:00 UTC
-    - cron: '0 8 * * 5,0'   # health
+    # Утренний выпуск — 09:00 МСК = 06:00 UTC
+    - cron: '0 6 * * *'    # morning
+    # Дневной выпуск — 15:00 МСК = 12:00 UTC
+    - cron: '0 12 * * *'   # afternoon
 
   workflow_dispatch:
     inputs:
@@ -31,19 +29,15 @@ env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
   TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-  # Platform API keys (из --register)
   PLATFORM_KEY_MOTHERHOOD: ${{ secrets.PLATFORM_KEY_MOTHERHOOD }}
   PLATFORM_KEY_PARENTING: ${{ secrets.PLATFORM_KEY_PARENTING }}
   PLATFORM_KEY_HEALTH: ${{ secrets.PLATFORM_KEY_HEALTH }}
-  # Platform agent IDs
   PLATFORM_AGENT_ID_MOTHERHOOD: ${{ secrets.PLATFORM_AGENT_ID_MOTHERHOOD }}
   PLATFORM_AGENT_ID_PARENTING: ${{ secrets.PLATFORM_AGENT_ID_PARENTING }}
   PLATFORM_AGENT_ID_HEALTH: ${{ secrets.PLATFORM_AGENT_ID_HEALTH }}
-  # Platform slugs
   PLATFORM_SLUG_MOTHERHOOD: ${{ secrets.PLATFORM_SLUG_MOTHERHOOD }}
   PLATFORM_SLUG_PARENTING: ${{ secrets.PLATFORM_SLUG_PARENTING }}
   PLATFORM_SLUG_HEALTH: ${{ secrets.PLATFORM_SLUG_HEALTH }}
-  # Claude Managed Agents IDs (из --setup)
   CLAUDE_ENVIRONMENT_ID: ${{ secrets.CLAUDE_ENVIRONMENT_ID }}
   CLAUDE_AGENT_ID_MOTHERHOOD: ${{ secrets.CLAUDE_AGENT_ID_MOTHERHOOD }}
   CLAUDE_AGENT_ID_PARENTING: ${{ secrets.CLAUDE_AGENT_ID_PARENTING }}
@@ -52,7 +46,7 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -66,32 +60,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # ── Scheduled runs (cron) ──────────────────────
-      - name: Run motherhood (пн/ср 09:00 МСК)
+      # ── Scheduled: все 3 агента каждый запуск ──
+      - name: Run all agents
         if: github.event_name == 'schedule'
-        run: |
-          CRON="${{ github.event.schedule }}"
-          if [ "$CRON" = "0 6 * * 1,3" ]; then
-            python deploy_agents.py --run motherhood
-          fi
+        run: python deploy_agents.py --run all
 
-      - name: Run parenting (вт/чт 10:00 МСК)
-        if: github.event_name == 'schedule'
-        run: |
-          CRON="${{ github.event.schedule }}"
-          if [ "$CRON" = "0 7 * * 2,4" ]; then
-            python deploy_agents.py --run parenting
-          fi
-
-      - name: Run health (пт/вс 11:00 МСК)
-        if: github.event_name == 'schedule'
-        run: |
-          CRON="${{ github.event.schedule }}"
-          if [ "$CRON" = "0 8 * * 5,0" ]; then
-            python deploy_agents.py --run health
-          fi
-
-      # ── Manual runs (workflow_dispatch) ────────────
+      # ── Manual runs ────────────────────────────
       - name: Run manual (with optional topic)
         if: github.event_name == 'workflow_dispatch'
         run: |
