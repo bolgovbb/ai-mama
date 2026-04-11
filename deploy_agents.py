@@ -441,6 +441,209 @@ sources — реальные URL из твоих поисков.
         notify_telegram(agent_name, topic, error=str(e))
 
 # ─────────────────────────────────────────────
+# ОБНОВЛЕНИЕ system_prompt агентов
+# ─────────────────────────────────────────────
+
+def update_agents():
+    """Обновляет system_prompt существующих Claude Managed Agents."""
+    state = load_state()
+    print("🔄 Обновление system_prompt агентов...\n")
+
+    for slug, agent_cfg in AGENTS.items():
+        agent_id = state.get(f"claude_agent_id_{slug}")
+        if not agent_id:
+            print(f"  ✗ Agent '{slug}' не найден — запусти --setup")
+            continue
+
+        current_version = state.get(f"claude_agent_version_{slug}", 1)
+        updated = client.beta.agents.update(
+            agent_id=agent_id,
+            version=current_version,
+            name=agent_cfg["name"],
+            model="claude-sonnet-4-6",
+            system=agent_cfg["system_prompt"],
+            tools=[{"type": "agent_toolset_20260401"}],
+            betas=[BETA_HEADER]
+        )
+        state[f"claude_agent_version_{slug}"] = updated.version
+        print(f"  ✅ '{agent_cfg['name']}': version {updated.version}")
+
+    save_state(state)
+    print("\n✅ Промпты обновлены!")
+
+# ─────────────────────────────────────────────
+# ПЕРЕЗАПИСЬ статей
+# ─────────────────────────────────────────────
+
+def rewrite_articles(slug):
+    """Получает список статей агента и перезаписывает каждую с новым промптом."""
+    state    = load_state()
+    api_key  = state.get(f"platform_api_key_{slug}")
+    agent_id = state.get(f"claude_agent_id_{slug}")
+    env_id   = state.get("environment_id")
+
+    if not api_key or not agent_id or not env_id:
+        print("✗ Не хватает данных. Запусти --register и --setup.")
+        return
+
+    agent_name = AGENTS[slug]["name"]
+    tags       = AGENT_TAGS[slug]
+    sources    = TRUSTED_SOURCES[slug]
+
+    # Получаем список статей
+    r    = requests.get(
+        f"{BASE_URL}/api/v1/articles/mine",
+        headers={"Authorization": f"Bearer {api_key}"},
+        params={"limit": 50},
+        timeout=15
+    )
+    data = r.json()
+    articles = data.get("items", [])
+
+    if not articles:
+        print(f"  Нет статей для '{agent_name}'")
+        return
+
+    print(f"\n🔄 Перезапись статей '{agent_name}' ({len(articles)} шт.)...\n")
+
+    for article in articles:
+        article_id    = article["id"]
+        original_title = article.get("title", "Без названия")
+        article_slug  = article.get("slug", "")
+
+        print(f"  📝 Перезаписываем: {original_title[:60]}...")
+
+        # Создаём сессию
+        session = client.beta.sessions.create(
+            agent=agent_id,
+            environment_id=env_id,
+            title=f"Rewrite: {original_title[:60]}",
+            betas=[BETA_HEADER]
+        )
+
+        rewrite_prompt = (
+            'Перепиши статью для блога mama.kindar.app на тему:\n\n'
+            f'"{original_title}"\n\n'
+            'ВАЖНО — НОВЫЕ ТРЕБОВАНИЯ К ТОНУ:\n'
+            '1. Ты — автор и исследователь, НЕ мама с личным опытом\n'
+            '2. Раздел «Из практики» вместо «Личный момент» — пиши от лица наблюдателя:\n'
+            '   «в практике часто встречается...», «многие мамы отмечают...», «часто слышу от женщин...»\n'
+            '3. НИКОГДА: «я сама рожала», «мои дети», «когда я была беременна», «мой муж»\n'
+            '4. Дисклеймер: «я автор и исследователь темы, не медицинский специалист»\n\n'
+            'ТРЕБОВАНИЯ ПЛАТФОРМЫ (factcheck_score >= 50):\n'
+            '1. Минимум 3 web_search для актуальных данных\n'
+            '2. Объём — не менее 600 слов\n'
+            '3. Структурируй Markdown-заголовками ## и списками\n'
+            '4. Упомяни источники: ВОЗ, ncbi.nlm.nih.gov, педиатр.ру (где уместно)\n\n'
+            'СТРУКТУРА:\n'
+            '## [Цепляющий заголовок раздела]\n'
+            '[Лид — 2-3 предложения]\n'
+            '## [Подзаголовок]\n...\n'
+            '## Из практики\n...\n'
+            '## Вывод\n...\n'
+            '⚠️ [Дисклеймер]\n\n'
+            'Верни СТРОГО:\n\n'
+            '```json\n'
+            '{\n'
+            '  "title": "Заголовок статьи",\n'
+            '  "body_md": "полный текст в markdown",\n'
+            '  "sources": ["url1", "url2", "url3"]\n'
+            '}\n'
+            '```\n'
+        )
+
+        client.beta.sessions.events.send(
+            session_id=session.id,
+            events=[{"type": "user.message", "content": [{"type": "text", "text": rewrite_prompt}]}],
+            betas=[BETA_HEADER]
+        )
+
+        full_response = ""
+        print("     Агент работает", end="", flush=True)
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                for event in client.beta.sessions.events.stream(
+                    session_id=session.id,
+                    betas=[BETA_HEADER],
+                    timeout=300.0,
+                ):
+                    if event.type == "agent.message":
+                        for block in event.content:
+                            if hasattr(block, "text"):
+                                full_response += block.text
+                                print(".", end="", flush=True)
+                    elif event.type == "agent.tool_use":
+                        print(f"\n     🔍 [{event.name}]", end="", flush=True)
+                    elif event.type == "session.status_idle":
+                        break
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"\n     ⚡ Reconnecting ({attempt + 2}/{max_retries})...", end="", flush=True)
+                    time.sleep(2)
+                else:
+                    print(f"\n     ⚠️  Stream error: {e}")
+                    try:
+                        events_page = client.beta.sessions.events.list(
+                            session_id=session.id, order="desc", limit=20, betas=[BETA_HEADER],
+                        )
+                        for ev in events_page.data:
+                            if hasattr(ev, 'content'):
+                                for block in ev.content:
+                                    if hasattr(block, 'text') and block.text not in full_response:
+                                        full_response += block.text
+                        if full_response:
+                            print("  ✓ Получен через events.list")
+                    except Exception:
+                        pass
+        print()
+
+        new_article = extract_article_json(full_response, original_title)
+        if not new_article:
+            print(f"     ✗ Не удалось распарсить — пропускаем")
+            continue
+
+        all_sources = list(set(new_article.get("sources", []) + sources))
+
+        # Обновляем статью через PATCH + auto_republish
+        try:
+            clean_body = new_article["body_md"].replace("\x00", "")
+            clean_title = new_article["title"].replace("\x00", "")
+            clean_sources = [s for s in all_sources if isinstance(s, str)]
+
+            payload = {
+                "title": clean_title,
+                "body_md": clean_body,
+                "tags": tags,
+                "sources": clean_sources,
+                "auto_republish": True,
+            }
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+            r = requests.patch(
+                f"{BASE_URL}/api/v1/articles/{article_id}",
+                json=payload,
+                headers=headers,
+                timeout=60
+            )
+            if r.status_code >= 400:
+                print(f"\n     DEBUG PATCH: {r.status_code} {r.text[:300]}")
+            r.raise_for_status()
+            result = r.json()
+            score  = result.get("factcheck_score", "?")
+            status = result.get("status", "?")
+            icon   = "✅" if status == "published" else "⚠️"
+            print(f"     {icon} Score: {score} | {status}")
+            if status == "published":
+                print(f"        {BASE_URL}/articles/{result.get('slug', '')}")
+        except Exception as e:
+            print(f"     ✗ Ошибка: {e}")
+
+    print(f"\n✅ Перезапись '{agent_name}' завершена!")
+
+# ─────────────────────────────────────────────
 # ПРОСМОТР статей
 # ─────────────────────────────────────────────
 
@@ -473,17 +676,21 @@ def list_articles(slug):
 
 def main():
     parser = argparse.ArgumentParser(description="Агент Маша Соколова → mama.kindar.app")
-    parser.add_argument("--register", action="store_true")
-    parser.add_argument("--setup",    action="store_true")
-    parser.add_argument("--run",      metavar="SLUG")
-    parser.add_argument("--topic",    nargs=2, metavar=("SLUG", "TOPIC"))
-    parser.add_argument("--list",     metavar="SLUG")
+    parser.add_argument("--register",     action="store_true")
+    parser.add_argument("--setup",        action="store_true")
+    parser.add_argument("--update",       action="store_true", help="Обновить system_prompt агентов")
+    parser.add_argument("--run",          metavar="SLUG")
+    parser.add_argument("--topic",        nargs=2, metavar=("SLUG", "TOPIC"))
+    parser.add_argument("--list",         metavar="SLUG")
+    parser.add_argument("--rewrite-all",  metavar="SLUG", help="Перезаписать все статьи агента")
     args = parser.parse_args()
 
     if args.register:
         register_agents()
     elif args.setup:
         setup()
+    elif args.update:
+        update_agents()
     elif args.run:
         slugs = list(AGENTS.keys()) if args.run == "all" else [args.run]
         for s in slugs:
@@ -494,6 +701,14 @@ def main():
         if slug in AGENTS: run_agent(slug, custom_topic=topic)
     elif args.list:
         if args.list in AGENTS: list_articles(args.list)
+    elif args.rewrite_all:
+        slug = args.rewrite_all
+        if slug == "all":
+            for s in AGENTS: rewrite_articles(s)
+        elif slug in AGENTS:
+            rewrite_articles(slug)
+        else:
+            print(f"Неизвестный агент: {slug}")
     else:
         parser.print_help()
 
