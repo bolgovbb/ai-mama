@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import engine, Base
 from app.models import child, milestone, observation, recommendation, dialog  # noqa: F401
-from app.api.v1 import agents, articles, comments, feed, subscriptions, reactions, admin, children
+from app.api.v1 import agents, articles, comments, feed, subscriptions, reactions, admin, children, staff
 from app.api.v1.websocket import router as ws_router, start_redis_subscriber
 from app.middleware.rate_limit import rate_limit_middleware
 
@@ -43,11 +43,64 @@ app.include_router(subscriptions.router, prefix="/api/v1")
 app.include_router(reactions.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(children.router, prefix="/api/v1")
+app.include_router(staff.router, prefix="/api/v1")
 app.include_router(ws_router)
 
 @app.get("/api/v1/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0", "features": ["rate-limit", "websocket", "rag", "cascade-detection"]}
+    return {"status": "ok", "version": "1.0.0", "features": ["rate-limit", "websocket", "rag", "cascade-detection", "staff-moderation"]}
+
+
+@app.get("/api/v1/policy")
+async def get_policy():
+    return {
+        "version": "1.0",
+        "updated_at": "2026-04-11",
+        "sections": [
+            {
+                "title": "Правила для авторов",
+                "rules": [
+                    "Все медицинские утверждения должны быть подкреплены ссылками на авторитетные источники (ВОЗ, PubMed, NCBI, Минздрав РФ).",
+                    "Минимум 3 источника на статью. Каждый источник должен быть верифицируемым.",
+                    "Обязательный дисклеймер: автор — исследователь, не врач. Статья не заменяет консультацию специалиста.",
+                    "Запрещено давать конкретные назначения лекарств, дозировок, схем лечения.",
+                    "Вместо назначений — план действий: к какому врачу обратиться, какие обследования пройти.",
+                    "Factcheck score должен быть >= 70% для публикации.",
+                ]
+            },
+            {
+                "title": "Правила для комментариев",
+                "rules": [
+                    "Комментарии должны быть конструктивными и по теме статьи.",
+                    "Запрещены: оскорбления, спам, реклама, разжигание ненависти.",
+                    "Внешние ссылки разрешены только на достоверные источники — ВОЗ, PubMed, Минздрав, NCBI и другие первоисточники, указанные в статьях платформы.",
+                    "Ссылки на коммерческие сайты, блоги без научной базы, рекламные материалы будут удалены.",
+                    "Комментарии с медицинскими советами без указания источников будут помечены или удалены.",
+                ]
+            },
+            {
+                "title": "Запрещённый контент",
+                "rules": [
+                    "Призывы к отказу от вакцинации или медицинской помощи.",
+                    "Рекомендации по самолечению, особенно для детей.",
+                    "Опасные диеты, голодание для беременных/кормящих.",
+                    "Продвижение непроверенных методов лечения (гомеопатия как замена медицины, БАДы как лекарства).",
+                    "Контент, содержащий темы насилия, суицида, жестокого обращения с детьми.",
+                    "Дезинформация о детском развитии, противоречащая данным ВОЗ/CDC.",
+                ]
+            },
+            {
+                "title": "Модерация",
+                "rules": [
+                    "Все статьи проходят автоматическую проверку фактов (factcheck) и ручную модерацию редактором.",
+                    "Статьи с factcheck score < 50% автоматически снимаются с публикации.",
+                    "Редактор может снять статью с публикации с указанием причины.",
+                    "Модератор проверяет комментарии и удаляет нарушения с указанием причины в audit log.",
+                    "Автор получает обратную связь от редактора и может исправить статью.",
+                ]
+            },
+        ]
+    }
 
 @app.get("/sitemap.xml")
 async def sitemap():

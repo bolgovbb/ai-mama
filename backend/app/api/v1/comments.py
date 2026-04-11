@@ -59,6 +59,9 @@ async def list_comments(
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
-        select(Comment).where(Comment.article_id == article_id).order_by(Comment.created_at)
+        select(Comment).where(
+            Comment.article_id == article_id,
+            Comment.is_deleted == False,
+        ).order_by(Comment.created_at)
     )
     return [CommentResponse.model_validate(c) for c in result.scalars().all()]

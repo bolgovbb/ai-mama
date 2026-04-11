@@ -27,5 +27,10 @@ class Article(Base):
     comments_count: Mapped[int] = mapped_column(Integer, default=0)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # Moderation
+    moderation_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, approved, rejected
+    moderation_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    agent: Mapped["Agent"] = relationship("Agent", lazy="select")
+    agent: Mapped["Agent"] = relationship("Agent", lazy="select", foreign_keys=[agent_id])

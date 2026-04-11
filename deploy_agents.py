@@ -19,7 +19,7 @@ import anthropic
 import requests
 from datetime import datetime
 from pathlib import Path
-from system_prompts import AGENTS
+from system_prompts import AGENTS, STAFF_AGENTS
 
 # ─────────────────────────────────────────────
 # КОНФИГ
@@ -102,6 +102,13 @@ ENV_KEY_MAP = {
     "claude_agent_id_motherhood":     "CLAUDE_AGENT_ID_MOTHERHOOD",
     "claude_agent_id_parenting":      "CLAUDE_AGENT_ID_PARENTING",
     "claude_agent_id_health":         "CLAUDE_AGENT_ID_HEALTH",
+    # Staff agents
+    "platform_api_key_editor":        "PLATFORM_KEY_EDITOR",
+    "platform_api_key_moderator":     "PLATFORM_KEY_MODERATOR",
+    "platform_agent_id_editor":       "PLATFORM_AGENT_ID_EDITOR",
+    "platform_agent_id_moderator":    "PLATFORM_AGENT_ID_MODERATOR",
+    "claude_agent_id_editor":         "CLAUDE_AGENT_ID_EDITOR",
+    "claude_agent_id_moderator":      "CLAUDE_AGENT_ID_MODERATOR",
 }
 
 def load_state() -> dict:
@@ -671,18 +678,356 @@ def list_articles(slug):
             print(f"           {BASE_URL}/articles/{a.get('slug', '')}")
 
 # ─────────────────────────────────────────────
+# STAFF: регистрация staff-агентов
+# ─────────────────────────────────────────────
+
+def register_staff():
+    """Регистрирует Редактора и Модератора на mama.kindar.app."""
+    state = load_state()
+    print("📝 Регистрация staff-агентов...\n")
+
+    for key, cfg in STAFF_AGENTS.items():
+        state_key = f"platform_api_key_{key}"
+        if state_key in state:
+            print(f"  ✓ {cfg['name']} — уже зарегистрирован")
+            continue
+
+        payload = {
+            "name": cfg["name"],
+            "bio": cfg["bio"],
+            "specialization": cfg["specialization"],
+        }
+        r = requests.post(
+            f"{BASE_URL}/api/v1/agents/register",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+        if r.status_code == 200:
+            data = r.json()
+            state[state_key] = data["api_key"]
+            state[f"platform_agent_id_{key}"] = data["agent"]["id"]
+            state[f"platform_agent_slug_{key}"] = data["agent"]["slug"]
+            print(f"  ✅ {cfg['name']}")
+            print(f"     agent_id : {data['agent']['id']}")
+            print(f"     api_key  : {data['api_key'][:12]}...")
+
+            # Установить role через staff API (нужно вручную в БД при первом запуске)
+            print(f"     ⚠️  Не забудь: UPDATE agents SET role='{cfg['role']}' WHERE id='{data['agent']['id']}';")
+        else:
+            print(f"  ✗ {cfg['name']} — ошибка {r.status_code}: {r.text[:200]}")
+
+    save_state(state)
+    print("\n✅ Staff-агенты зарегистрированы.")
+
+
+def setup_staff():
+    """Создаёт Claude Managed Agents для staff."""
+    state = load_state()
+    env_id = state.get("environment_id")
+    if not env_id:
+        print("✗ Нет environment_id. Запусти --setup сначала.")
+        return
+
+    print("🚀 Создание Claude Managed Agents для staff...\n")
+
+    for key, cfg in STAFF_AGENTS.items():
+        agent_key = f"claude_agent_id_{key}"
+        if agent_key in state:
+            print(f"  ✓ Claude Agent '{cfg['name']}': {state[agent_key]}")
+            continue
+
+        agent = client.beta.agents.create(
+            name=cfg["name"],
+            model="claude-sonnet-4-6",
+            system=cfg["system_prompt"],
+            tools=[{"type": "agent_toolset_20260401"}],
+            betas=[BETA_HEADER]
+        )
+        state[agent_key] = agent.id
+        state[f"claude_agent_version_{key}"] = agent.version
+        print(f"  ✅ '{cfg['name']}': {agent.id}")
+
+    save_state(state)
+    print("\n✅ Staff agents созданы!")
+
+
+# ─────────────────────────────────────────────
+# STAFF: запуск Редактора
+# ─────────────────────────────────────────────
+
+def run_editor():
+    """Редактор проверяет pending статьи."""
+    state = load_state()
+    staff_key = state.get("platform_api_key_editor")
+    claude_id = state.get("claude_agent_id_editor")
+    env_id    = state.get("environment_id")
+
+    if not staff_key or not claude_id or not env_id:
+        print("✗ Нет данных для editor. Запусти --register-staff и --setup-staff.")
+        return
+
+    print("📋 Получаем статьи на модерацию...")
+    r = requests.get(
+        f"{BASE_URL}/api/v1/staff/articles/pending",
+        headers={"Authorization": f"Bearer {staff_key}"},
+        params={"limit": 10},
+        timeout=15
+    )
+
+    if r.status_code != 200:
+        print(f"  ✗ Ошибка API: {r.status_code} — {r.text[:200]}")
+        return
+
+    articles = r.json()
+    if not articles:
+        print("  ✓ Нет статей для проверки.")
+        return
+
+    print(f"  Найдено {len(articles)} статей на проверку.\n")
+
+    for article in articles:
+        article_id = article["id"]
+        title = article["title"]
+        body_md = article.get("body_md", "")
+        sources = article.get("sources", [])
+
+        print(f"  📝 Проверяем: {title[:60]}...")
+
+        # Создаём сессию для review
+        session = client.beta.sessions.create(
+            agent=claude_id,
+            environment_id=env_id,
+            title=f"Review: {title[:60]}",
+            betas=[BETA_HEADER]
+        )
+
+        review_prompt = f"""Проверь эту статью с платформы mama.kindar.app:
+
+ЗАГОЛОВОК: {title}
+
+ТЕКСТ СТАТЬИ:
+{body_md[:4000]}
+
+ИСТОЧНИКИ: {json.dumps(sources, ensure_ascii=False)[:500]}
+
+Проведи review по правилам платформы и верни JSON с результатом.
+"""
+
+        client.beta.sessions.events.send(
+            session_id=session.id,
+            events=[{"type": "user.message", "content": [{"type": "text", "text": review_prompt}]}],
+            betas=[BETA_HEADER]
+        )
+
+        full_response = ""
+        for attempt in range(3):
+            try:
+                for event in client.beta.sessions.events.stream(
+                    session_id=session.id, betas=[BETA_HEADER], timeout=120.0,
+                ):
+                    if event.type == "agent.message":
+                        for block in event.content:
+                            if hasattr(block, "text"):
+                                full_response += block.text
+                    elif event.type == "session.status_idle":
+                        break
+                break
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(2)
+                else:
+                    print(f"     ⚠️  Stream error: {e}")
+
+        # Парсим review JSON
+        review = None
+        match = re.search(r"```json\s*(\{.*?\})\s*```", full_response, re.DOTALL)
+        if match:
+            try:
+                review = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        if not review:
+            print(f"     ✗ Не удалось распарсить review")
+            continue
+
+        action = review.get("action", "approve")
+        score = review.get("factcheck_score")
+        note = review.get("note", "")
+
+        # Отправляем review на платформу
+        review_payload = {
+            "action": action,
+            "note": note,
+        }
+        if score is not None:
+            review_payload["factcheck_score"] = score
+
+        try:
+            rr = requests.post(
+                f"{BASE_URL}/api/v1/staff/articles/{article_id}/review",
+                json=review_payload,
+                headers={"Authorization": f"Bearer {staff_key}", "Content-Type": "application/json"},
+                timeout=30
+            )
+            if rr.status_code == 200:
+                icon = "✅" if action == "approve" else "🚫"
+                print(f"     {icon} {action} | score: {score} | {note[:80]}")
+            else:
+                print(f"     ✗ Review API error: {rr.status_code}")
+        except Exception as e:
+            print(f"     ✗ Ошибка: {e}")
+
+    print(f"\n✅ Редактор завершил проверку.")
+    notify_telegram("Редактор kinDAR", f"Проверено {len(articles)} статей")
+
+
+# ─────────────────────────────────────────────
+# STAFF: запуск Модератора
+# ─────────────────────────────────────────────
+
+def run_moderator():
+    """Модератор проверяет последние комментарии."""
+    state = load_state()
+    staff_key = state.get("platform_api_key_moderator")
+    claude_id = state.get("claude_agent_id_moderator")
+    env_id    = state.get("environment_id")
+
+    if not staff_key or not claude_id or not env_id:
+        print("✗ Нет данных для moderator. Запусти --register-staff и --setup-staff.")
+        return
+
+    print("📋 Получаем последние комментарии...")
+    r = requests.get(
+        f"{BASE_URL}/api/v1/staff/comments/recent",
+        headers={"Authorization": f"Bearer {staff_key}"},
+        params={"limit": 50},
+        timeout=15
+    )
+
+    if r.status_code != 200:
+        print(f"  ✗ Ошибка API: {r.status_code} — {r.text[:200]}")
+        return
+
+    comments = r.json()
+    if not comments:
+        print("  ✓ Нет комментариев для проверки.")
+        return
+
+    print(f"  Найдено {len(comments)} комментариев.\n")
+
+    # Отправляем все комментарии разом в одну сессию
+    session = client.beta.sessions.create(
+        agent=claude_id,
+        environment_id=env_id,
+        title="Moderation batch",
+        betas=[BETA_HEADER]
+    )
+
+    comments_text = "\n\n".join([
+        f"[ID: {c['id']}] {c['body'][:300]}"
+        for c in comments
+    ])
+
+    mod_prompt = f"""Проверь эти комментарии с платформы mama.kindar.app на нарушения правил.
+
+КОММЕНТАРИИ:
+{comments_text}
+
+Для каждого комментария верни JSON:
+```json
+[
+  {{"id": "...", "action": "skip"|"delete", "reason": "...", "violation_type": "..."|null}}
+]
+```
+
+Если комментарий нормальный — action: "skip".
+"""
+
+    client.beta.sessions.events.send(
+        session_id=session.id,
+        events=[{"type": "user.message", "content": [{"type": "text", "text": mod_prompt}]}],
+        betas=[BETA_HEADER]
+    )
+
+    full_response = ""
+    for attempt in range(3):
+        try:
+            for event in client.beta.sessions.events.stream(
+                session_id=session.id, betas=[BETA_HEADER], timeout=120.0,
+            ):
+                if event.type == "agent.message":
+                    for block in event.content:
+                        if hasattr(block, "text"):
+                            full_response += block.text
+                elif event.type == "session.status_idle":
+                    break
+            break
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+            else:
+                print(f"  ⚠️  Stream error: {e}")
+
+    # Парсим результат
+    match = re.search(r"```json\s*(\[.*?\])\s*```", full_response, re.DOTALL)
+    if not match:
+        print("  ✗ Не удалось распарсить результат модерации")
+        return
+
+    try:
+        results = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        print("  ✗ JSON parse error")
+        return
+
+    deleted_count = 0
+    for item in results:
+        if item.get("action") == "delete":
+            comment_id = item["id"]
+            reason = item.get("reason", "Нарушение правил платформы")
+
+            try:
+                rr = requests.delete(
+                    f"{BASE_URL}/api/v1/staff/comments/{comment_id}",
+                    json={"reason": reason},
+                    headers={"Authorization": f"Bearer {staff_key}", "Content-Type": "application/json"},
+                    timeout=15
+                )
+                if rr.status_code == 200:
+                    print(f"  🚫 Удалён [{comment_id[:8]}]: {reason[:60]}")
+                    deleted_count += 1
+                else:
+                    print(f"  ✗ Delete error for {comment_id[:8]}: {rr.status_code}")
+            except Exception as e:
+                print(f"  ✗ Ошибка: {e}")
+
+    print(f"\n✅ Модератор завершил. Удалено: {deleted_count}/{len(results)}")
+    if deleted_count > 0:
+        notify_telegram("Модератор kinDAR", f"Удалено {deleted_count} комментариев")
+
+
+# ─────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Агент Маша Соколова → mama.kindar.app")
-    parser.add_argument("--register",     action="store_true")
-    parser.add_argument("--setup",        action="store_true")
-    parser.add_argument("--update",       action="store_true", help="Обновить system_prompt агентов")
-    parser.add_argument("--run",          metavar="SLUG")
-    parser.add_argument("--topic",        nargs=2, metavar=("SLUG", "TOPIC"))
-    parser.add_argument("--list",         metavar="SLUG")
-    parser.add_argument("--rewrite-all",  metavar="SLUG", help="Перезаписать все статьи агента")
+    parser = argparse.ArgumentParser(description="Агент Маша Соколова + Staff → mama.kindar.app")
+    # Авторы
+    parser.add_argument("--register",        action="store_true", help="Зарегистрировать авторов")
+    parser.add_argument("--setup",           action="store_true", help="Создать Claude Managed Agents")
+    parser.add_argument("--update",          action="store_true", help="Обновить system_prompt агентов")
+    parser.add_argument("--run",             metavar="SLUG", help="Запустить агента (slug или all)")
+    parser.add_argument("--topic",           nargs=2, metavar=("SLUG", "TOPIC"))
+    parser.add_argument("--list",            metavar="SLUG")
+    parser.add_argument("--rewrite-all",     metavar="SLUG", help="Перезаписать все статьи агента")
+    # Staff
+    parser.add_argument("--register-staff",  action="store_true", help="Зарегистрировать staff-агентов")
+    parser.add_argument("--setup-staff",     action="store_true", help="Создать Claude Agents для staff")
+    parser.add_argument("--run-editor",      action="store_true", help="Запустить Редактора (проверка статей)")
+    parser.add_argument("--run-moderator",   action="store_true", help="Запустить Модератора (проверка комментариев)")
+
     args = parser.parse_args()
 
     if args.register:
@@ -709,6 +1054,14 @@ def main():
             rewrite_articles(slug)
         else:
             print(f"Неизвестный агент: {slug}")
+    elif args.register_staff:
+        register_staff()
+    elif args.setup_staff:
+        setup_staff()
+    elif args.run_editor:
+        run_editor()
+    elif args.run_moderator:
+        run_moderator()
     else:
         parser.print_help()
 

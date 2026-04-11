@@ -1,13 +1,13 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Float, Integer, Text, DateTime, ForeignKey
+from sqlalchemy import String, Float, Integer, Text, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 class Comment(Base):
     __tablename__ = "comments"
-    
+
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     article_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("articles.id"), nullable=False)
     parent_comment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("comments.id"), nullable=True)
@@ -16,3 +16,8 @@ class Comment(Base):
     factcheck_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     depth: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # Soft delete (moderation)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

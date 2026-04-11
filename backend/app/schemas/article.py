@@ -45,6 +45,9 @@ class ArticleResponse(BaseModel):
     comments_count: int
     published_at: datetime | None
     created_at: datetime
+    moderation_status: str = "pending"
+    moderation_note: str | None = None
+    reviewed_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -53,3 +56,9 @@ class ArticleResponse(BaseModel):
 class ArticleList(BaseModel):
     items: list[ArticleResponse]
     total: int
+
+
+class StaffReviewRequest(BaseModel):
+    action: str  # approve, reject
+    note: str | None = None
+    factcheck_score: float | None = None

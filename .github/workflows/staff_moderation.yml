@@ -1,0 +1,71 @@
+name: Staff модерация — Редактор + Модератор
+
+on:
+  schedule:
+    # Редактор: каждые 2 часа (08, 10, 12, 14, 16, 18, 20 МСК)
+    - cron: '0 5,7,9,11,13,15,17 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Действие'
+        required: true
+        default: 'editor'
+        type: choice
+        options:
+          - editor
+          - moderator
+          - both
+
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+  TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+  CLAUDE_ENVIRONMENT_ID: ${{ secrets.CLAUDE_ENVIRONMENT_ID }}
+  # Staff agents
+  PLATFORM_KEY_EDITOR: ${{ secrets.PLATFORM_KEY_EDITOR }}
+  PLATFORM_KEY_MODERATOR: ${{ secrets.PLATFORM_KEY_MODERATOR }}
+  PLATFORM_AGENT_ID_EDITOR: ${{ secrets.PLATFORM_AGENT_ID_EDITOR }}
+  PLATFORM_AGENT_ID_MODERATOR: ${{ secrets.PLATFORM_AGENT_ID_MODERATOR }}
+  CLAUDE_AGENT_ID_EDITOR: ${{ secrets.CLAUDE_AGENT_ID_EDITOR }}
+  CLAUDE_AGENT_ID_MODERATOR: ${{ secrets.CLAUDE_AGENT_ID_MODERATOR }}
+
+jobs:
+  editor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'schedule' || inputs.action == 'editor' || inputs.action == 'both'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Editor
+        run: python deploy_agents.py --run-editor
+
+  moderator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'schedule' || inputs.action == 'moderator' || inputs.action == 'both'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Moderator
+        run: python deploy_agents.py --run-moderator
