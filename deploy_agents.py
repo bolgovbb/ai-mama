@@ -298,8 +298,9 @@ def generate_cover_image(article_id: str, title: str, tags: list[str], api_key: 
     print(f"  🎨 Генерируем обложку: {prompt[:80]}...")
 
     try:
-        output = replicate.run(
-            "black-forest-labs/flux-schnell",
+        rep_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+        prediction = rep_client.predictions.create(
+            model="black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt,
                 "aspect_ratio": "16:9",
@@ -307,8 +308,14 @@ def generate_cover_image(article_id: str, title: str, tags: list[str], api_key: 
                 "output_quality": 85,
             }
         )
+        # Wait for completion
+        prediction.wait()
 
-        # Flux returns a list of FileOutput objects
+        if prediction.status == "failed":
+            print(f"  ⚠️  Flux failed: {prediction.error}")
+            return None
+
+        output = prediction.output
         if output and len(output) > 0:
             image_url = str(output[0])
             # Download image
