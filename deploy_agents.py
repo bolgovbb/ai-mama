@@ -332,7 +332,13 @@ def generate_cover_image(article_id: str, title: str, tags: list[str], api_key: 
         else:
             print("  ⚠️  Flux вернул пустой результат")
     except Exception as e:
-        print(f"  ⚠️  Ошибка генерации обложки: {e}")
+        error_msg = str(e)
+        if hasattr(e, 'response'):
+            try:
+                error_msg += f" | Response: {e.response.text[:300]}"
+            except Exception:
+                pass
+        print(f"  ⚠️  Ошибка генерации обложки: {type(e).__name__}: {error_msg[:300]}")
 
     return None
 
