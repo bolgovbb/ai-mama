@@ -208,7 +208,7 @@ async def upload_cover(
         raise HTTPException(403, "Not your article")
 
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "webp"
-    covers_dir = Path(__file__).parent.parent / "static" / "covers"
+    covers_dir = Path(__file__).parent.parent.parent / "static" / "covers"
     covers_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{article_id}.{ext}"
     filepath = covers_dir / filename
