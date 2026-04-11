@@ -813,6 +813,8 @@ def rewrite_articles(slug):
                 if status == "draft":
                     note = submit_result.get("moderation_note", "")
                     print(f"        ⚠️  Score слишком низкий: {note[:100]}")
+                # Generate cover
+                generate_cover_image(article_id, new_article["title"], tags, api_key, slug)
             elif r2.status_code == 400:
                 print(f"     ⚠️  Submit: {r2.text[:200]}")
             else:
@@ -1410,6 +1412,7 @@ def run_revisions():
                 if rs.status_code == 200:
                     result = rs.json()
                     print(f"     ✅ Доработано → {result['status']} | score: {result.get('factcheck_score', '?')}")
+                    generate_cover_image(article_id, title, tags, api_key, slug)
                 else:
                     print(f"     ⚠️  Submit: {rs.status_code}")
             except Exception as e:

@@ -117,7 +117,9 @@ async def submit_article(
         "original": article.sources if isinstance(article.sources, list) else [],
         "rag_metadata": rag_result,
     }
-    article.cover_image = f"/api/v1/articles/{article.slug}/cover-image"
+    # Only set SVG fallback if no Flux cover exists
+    if not article.cover_image or "/static/covers/" not in (article.cover_image or ""):
+        article.cover_image = f"/api/v1/articles/{article.slug}/cover-image"
 
     if article.factcheck_score >= 50.0:
         article.status = "review"
