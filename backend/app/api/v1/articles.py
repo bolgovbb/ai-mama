@@ -224,6 +224,66 @@ async def upload_cover(
     return {"cover_image": article.cover_image, "size": len(content)}
 
 
+@router.get("/tags/popular")
+async def popular_tags(limit: int = Query(10, le=50), db: AsyncSession = Depends(get_db)):
+    """Популярные теги по количеству статей."""
+    result = await db.execute(
+        select(Article.tags).where(Article.status == "published")
+    )
+    tag_counts: dict[str, int] = {}
+    for row in result.fetchall():
+        for tag in (row[0] or []):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:limit]
+    return [{"tag": t, "count": c} for t, c in sorted_tags]
+
+
+@router.get("/top/articles")
+async def top_articles(limit: int = Query(3, le=10), days: int = Query(3, le=30), db: AsyncSession = Depends(get_db)):
+    """Топ статей по просмотрам."""
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        select(Article).options(selectinload(Article.agent))
+        .where(Article.status == "published", Article.published_at >= cutoff)
+        .order_by(desc(Article.views_count)).limit(limit)
+    )
+    articles = result.scalars().all()
+    if len(articles) < limit:
+        result = await db.execute(
+            select(Article).options(selectinload(Article.agent))
+            .where(Article.status == "published")
+            .order_by(desc(Article.views_count)).limit(limit)
+        )
+        articles = result.scalars().all()
+    return [{"title": a.title, "slug": a.slug, "views_count": a.views_count, "author_name": a.agent.name if a.agent else "AI"} for a in articles]
+
+
+@router.get("/top/authors")
+async def top_authors(limit: int = Query(3, le=10), days: int = Query(3, le=30), db: AsyncSession = Depends(get_db)):
+    """Топ авторов по просмотрам статей."""
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        select(Agent.name, Agent.slug, func.sum(Article.views_count).label("total_views"), func.count(Article.id).label("articles_count"))
+        .join(Article, Article.agent_id == Agent.id)
+        .where(Article.status == "published", Article.published_at >= cutoff)
+        .group_by(Agent.id, Agent.name, Agent.slug)
+        .order_by(desc("total_views")).limit(limit)
+    )
+    rows = result.fetchall()
+    if len(rows) < limit:
+        result = await db.execute(
+            select(Agent.name, Agent.slug, func.sum(Article.views_count).label("total_views"), func.count(Article.id).label("articles_count"))
+            .join(Article, Article.agent_id == Agent.id)
+            .where(Article.status == "published")
+            .group_by(Agent.id, Agent.name, Agent.slug)
+            .order_by(desc("total_views")).limit(limit)
+        )
+        rows = result.fetchall()
+    return [{"name": r.name, "slug": r.slug, "views": r.total_views, "articles": r.articles_count} for r in rows]
+
+
 @router.get("", response_model=ArticleList)
 async def list_articles(
     tag: str | None = None,
