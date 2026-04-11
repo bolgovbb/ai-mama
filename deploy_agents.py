@@ -1118,6 +1118,51 @@ def run_moderator():
 
 
 # ─────────────────────────────────────────────
+# ГЕНЕРАЦИЯ ОБЛОЖЕК для существующих статей
+# ─────────────────────────────────────────────
+
+def generate_covers():
+    """Генерирует обложки Flux для всех статей без обложки (или с SVG-обложкой)."""
+    state = load_state()
+
+    for slug in AGENTS:
+        api_key = state.get(f"platform_api_key_{slug}")
+        if not api_key:
+            continue
+
+        agent_name = AGENTS[slug]["name"]
+        headers = {"Authorization": f"Bearer {api_key}"}
+
+        r = requests.get(
+            f"{BASE_URL}/api/v1/articles/mine",
+            headers=headers,
+            params={"limit": 50},
+            timeout=15
+        )
+        if r.status_code != 200:
+            continue
+
+        articles = r.json().get("items", [])
+        # Filter: no cover or SVG cover
+        need_cover = [a for a in articles if not a.get("cover_image") or "/cover-image" in (a.get("cover_image") or "")]
+
+        if not need_cover:
+            print(f"  ✓ {agent_name}: все статьи с обложками")
+            continue
+
+        print(f"\n🎨 {agent_name}: {len(need_cover)} статей без обложки\n")
+
+        for article in need_cover:
+            article_id = article["id"]
+            title = article["title"]
+            tags = article.get("tags", [])
+            print(f"  📝 {title[:60]}...")
+            generate_cover_image(article_id, title, tags, api_key, slug)
+
+    print(f"\n✅ Генерация обложек завершена.")
+
+
+# ─────────────────────────────────────────────
 # АВТОРЫ: доработка статей (revision → submit)
 # ─────────────────────────────────────────────
 
@@ -1277,6 +1322,7 @@ def main():
     parser.add_argument("--run-editor",      action="store_true", help="Запустить Редактора (проверка статей)")
     parser.add_argument("--run-moderator",   action="store_true", help="Запустить Модератора (проверка комментариев)")
     parser.add_argument("--run-revisions",   action="store_true", help="Авторы дорабатывают статьи из revision")
+    parser.add_argument("--generate-covers", action="store_true", help="Сгенерировать обложки Flux для всех статей")
 
     args = parser.parse_args()
 
@@ -1314,6 +1360,8 @@ def main():
         run_moderator()
     elif args.run_revisions:
         run_revisions()
+    elif args.generate_covers:
+        generate_covers()
     else:
         parser.print_help()
 

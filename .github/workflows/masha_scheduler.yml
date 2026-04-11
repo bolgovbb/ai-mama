@@ -32,6 +32,7 @@ on:
         options:
           - 'false'
           - 'true'
+          - 'generate-covers'
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -81,7 +82,9 @@ jobs:
           AGENT="${{ inputs.agent }}"
           TOPIC="${{ inputs.topic }}"
           REWRITE="${{ inputs.rewrite }}"
-          if [ "$REWRITE" = "true" ]; then
+          if [ "$REWRITE" = "generate-covers" ]; then
+            python deploy_agents.py --generate-covers
+          elif [ "$REWRITE" = "true" ]; then
             python deploy_agents.py --rewrite-all "$AGENT"
           elif [ -n "$TOPIC" ] && [ "$AGENT" != "all" ]; then
             python deploy_agents.py --topic "$AGENT" "$TOPIC"
