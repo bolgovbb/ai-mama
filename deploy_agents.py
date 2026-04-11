@@ -299,15 +299,25 @@ def generate_cover_image(article_id: str, title: str, tags: list[str], api_key: 
 
     try:
         os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
-        output = replicate.run(
-            "black-forest-labs/flux-schnell",
-            input={
-                "prompt": prompt,
-                "aspect_ratio": "16:9",
-                "output_format": "webp",
-                "output_quality": 85,
-            }
-        )
+        output = None
+        for attempt in range(3):
+            try:
+                output = replicate.run(
+                    "black-forest-labs/flux-schnell",
+                    input={
+                        "prompt": prompt,
+                        "aspect_ratio": "16:9",
+                        "output_format": "webp",
+                        "output_quality": 85,
+                    }
+                )
+                break
+            except Exception as retry_err:
+                if attempt < 2:
+                    print(f"  ⏳ Retry {attempt + 2}/3 (waiting 10s)...")
+                    time.sleep(10)
+                else:
+                    raise retry_err
 
         if output and len(output) > 0:
             # Read image bytes directly from FileOutput
