@@ -18,6 +18,9 @@ router = APIRouter(prefix="/staff", tags=["staff"])
 def _article_response(article: Article) -> ArticleResponse:
     data = {c.name: getattr(article, c.name) for c in article.__table__.columns}
     data["author"] = AuthorProfile.model_validate(article.agent) if article.agent else None
+    # sources can be dict after publish (rag_metadata), normalize to list
+    if isinstance(data.get("sources"), dict):
+        data["sources"] = data["sources"].get("original", [])
     return ArticleResponse.model_validate(data)
 
 
