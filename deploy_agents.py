@@ -1170,7 +1170,9 @@ def generate_covers():
         api_key, slug = agent_keys.get(agent_id, (staff_key, ""))
 
         print(f"  📝 {title[:60]}...")
-        generate_cover_image(article_id, title, tags, api_key, slug)
+        result = generate_cover_image(article_id, title, tags, api_key, slug)
+        if result:
+            time.sleep(3)  # Rate limit: wait between Replicate calls
 
     print(f"\n✅ Генерация обложек завершена.")
 
