@@ -1,8 +1,9 @@
 import uuid
+import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, or_
+from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.api.deps import get_staff_agent
@@ -11,6 +12,8 @@ from app.models.article import Article
 from app.models.comment import Comment
 from app.schemas.article import ArticleResponse, AuthorProfile, StaffReviewRequest
 from app.schemas.comment import CommentResponse, StaffDeleteCommentRequest
+import redis.asyncio as aioredis
+from app.config import settings
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
@@ -18,28 +21,25 @@ router = APIRouter(prefix="/staff", tags=["staff"])
 def _article_response(article: Article) -> ArticleResponse:
     data = {c.name: getattr(article, c.name) for c in article.__table__.columns}
     data["author"] = AuthorProfile.model_validate(article.agent) if article.agent else None
-    # sources can be dict after publish (rag_metadata), normalize to list
     if isinstance(data.get("sources"), dict):
         data["sources"] = data["sources"].get("original", [])
+    data["is_verified"] = (article.status == "published" and article.reviewed_by is not None)
     return ArticleResponse.model_validate(data)
 
 
-@router.get("/articles/pending", response_model=list[ArticleResponse])
-async def list_pending_articles(
+@router.get("/articles/review", response_model=list[ArticleResponse])
+async def list_review_articles(
     limit: int = Query(20, le=100),
     offset: int = 0,
     agent: Agent = Depends(get_staff_agent),
     db: AsyncSession = Depends(get_db),
 ):
-    """Статьи, ожидающие модерации (published но не reviewed)."""
+    """Статьи со статусом review — ожидают проверки staff."""
     query = (
         select(Article)
         .options(selectinload(Article.agent))
-        .where(
-            Article.status == "published",
-            or_(Article.moderation_status == "pending", Article.moderation_status == None),
-        )
-        .order_by(Article.published_at)
+        .where(Article.status == "review")
+        .order_by(Article.created_at)
         .offset(offset)
         .limit(limit)
     )
@@ -54,7 +54,7 @@ async def review_article(
     agent: Agent = Depends(get_staff_agent),
     db: AsyncSession = Depends(get_db),
 ):
-    """Оставить review на статью (approve/reject)."""
+    """Approve или request_revision для статьи."""
     result = await db.execute(
         select(Article).options(selectinload(Article.agent)).where(Article.id == article_id)
     )
@@ -62,10 +62,9 @@ async def review_article(
     if not article:
         raise HTTPException(404, "Article not found")
 
-    if data.action not in ("approve", "reject"):
-        raise HTTPException(400, "action must be 'approve' or 'reject'")
+    if data.action not in ("approve", "request_revision"):
+        raise HTTPException(400, "action must be 'approve' or 'request_revision'")
 
-    article.moderation_status = "approved" if data.action == "approve" else "rejected"
     article.moderation_note = data.note
     article.reviewed_by = agent.id
     article.reviewed_at = datetime.now(timezone.utc)
@@ -73,8 +72,26 @@ async def review_article(
     if data.factcheck_score is not None:
         article.factcheck_score = data.factcheck_score
 
-    if data.action == "reject":
-        article.status = "flagged"
+    if data.action == "approve":
+        article.status = "published"
+        article.published_at = datetime.now(timezone.utc)
+        article.cover_image = f"/api/v1/articles/{article.slug}/cover-image"
+        # Redis broadcast
+        try:
+            r = aioredis.from_url(settings.redis_url, decode_responses=True)
+            await r.publish("feed", json.dumps({
+                "type": "new_article",
+                "id": str(article.id),
+                "title": article.title,
+                "slug": article.slug,
+                "tags": article.tags,
+                "factcheck_score": article.factcheck_score,
+            }))
+            await r.aclose()
+        except Exception:
+            pass
+    else:
+        article.status = "revision"
 
     await db.commit()
     await db.refresh(article, ["agent"])
@@ -95,8 +112,7 @@ async def unpublish_article(
     if not article:
         raise HTTPException(404, "Article not found")
 
-    article.status = "flagged"
-    article.moderation_status = "rejected"
+    article.status = "unpublished"
     article.moderation_note = article.moderation_note or "Снято с публикации staff-модератором"
     article.reviewed_by = agent.id
     article.reviewed_at = datetime.now(timezone.utc)
@@ -141,7 +157,6 @@ async def delete_comment(
     comment.deleted_by = agent.id
     comment.deleted_at = datetime.now(timezone.utc)
 
-    # Уменьшить счётчик комментариев на статье
     art_result = await db.execute(select(Article).where(Article.id == comment.article_id))
     article = art_result.scalar_one_or_none()
     if article and article.comments_count > 0:

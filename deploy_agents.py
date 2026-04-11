@@ -220,21 +220,28 @@ def setup():
 # ─────────────────────────────────────────────
 
 def publish_to_platform(slug, title, body_md, tags, sources, api_key):
+    """Создаёт статью (draft) и отправляет на проверку (submit → review)."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    # 1. Create draft
     payload = {
         "title": title,
         "body_md": body_md,
         "tags": tags,
         "sources": sources,
-        "auto_publish": True,
     }
-    r = requests.post(
-        f"{BASE_URL}/api/v1/articles",
-        json=payload,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        timeout=60
-    )
+    r = requests.post(f"{BASE_URL}/api/v1/articles", json=payload, headers=headers, timeout=60)
     r.raise_for_status()
-    return r.json()
+    article = r.json()
+
+    # 2. Submit for review
+    article_id = article["id"]
+    r2 = requests.post(f"{BASE_URL}/api/v1/articles/{article_id}/submit", headers=headers, timeout=60)
+    if r2.status_code == 200:
+        return r2.json()
+    else:
+        print(f"  ⚠️  Submit failed ({r2.status_code}), article stays as draft")
+        return article
 
 def save_as_draft(body_md, title, slug):
     Path("drafts").mkdir(exist_ok=True)
@@ -767,9 +774,9 @@ def run_editor():
         print("✗ Нет данных для editor. Запусти --register-staff и --setup-staff.")
         return
 
-    print("📋 Получаем статьи на модерацию...")
+    print("📋 Получаем статьи на проверку (review)...")
     r = requests.get(
-        f"{BASE_URL}/api/v1/staff/articles/pending",
+        f"{BASE_URL}/api/v1/staff/articles/review",
         headers={"Authorization": f"Bearer {staff_key}"},
         params={"limit": 10},
         timeout=15
@@ -853,10 +860,12 @@ def run_editor():
             continue
 
         action = review.get("action", "approve")
+        # Normalize: reject → request_revision
+        if action == "reject":
+            action = "request_revision"
         score = review.get("factcheck_score")
         note = review.get("note", "")
 
-        # Отправляем review на платформу
         review_payload = {
             "action": action,
             "note": note,
@@ -872,8 +881,9 @@ def run_editor():
                 timeout=30
             )
             if rr.status_code == 200:
-                icon = "✅" if action == "approve" else "🚫"
-                print(f"     {icon} {action} | score: {score} | {note[:80]}")
+                icon = "✅" if action == "approve" else "📝"
+                label = "published" if action == "approve" else "→ revision"
+                print(f"     {icon} {label} | score: {score} | {note[:80]}")
             else:
                 print(f"     ✗ Review API error: {rr.status_code}")
         except Exception as e:
@@ -1009,6 +1019,146 @@ def run_moderator():
 
 
 # ─────────────────────────────────────────────
+# АВТОРЫ: доработка статей (revision → submit)
+# ─────────────────────────────────────────────
+
+def run_revisions():
+    """Агенты-авторы дорабатывают статьи со статусом revision."""
+    state = load_state()
+
+    for slug in AGENTS:
+        api_key   = state.get(f"platform_api_key_{slug}")
+        claude_id = state.get(f"claude_agent_id_{slug}")
+        env_id    = state.get("environment_id")
+
+        if not api_key or not claude_id or not env_id:
+            continue
+
+        agent_name = AGENTS[slug]["name"]
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+        # Получаем revision статьи этого агента
+        r = requests.get(
+            f"{BASE_URL}/api/v1/articles/my/revisions",
+            headers=headers,
+            timeout=15
+        )
+        if r.status_code != 200:
+            continue
+
+        revisions = r.json()
+        if not revisions:
+            continue
+
+        print(f"\n📝 {agent_name}: {len(revisions)} статей на доработку\n")
+
+        for article in revisions:
+            article_id = article["id"]
+            title = article["title"]
+            note = article.get("moderation_note", "")
+            body_md = article.get("body_md", "")
+
+            print(f"  🔄 Дорабатываем: {title[:60]}...")
+            print(f"     Замечание: {note[:100]}")
+
+            session = client.beta.sessions.create(
+                agent=claude_id,
+                environment_id=env_id,
+                title=f"Revision: {title[:60]}",
+                betas=[BETA_HEADER]
+            )
+
+            revision_prompt = f"""Доработай статью для mama.kindar.app. Редактор вернул её с замечаниями.
+
+ЗАГОЛОВОК: {title}
+
+ЗАМЕЧАНИЯ РЕДАКТОРА:
+{note}
+
+ТЕКУЩИЙ ТЕКСТ:
+{body_md[:3000]}
+
+ЗАДАЧА:
+1. Исправь все замечания редактора
+2. Убедись что есть дисклеймер в конце
+3. Все медицинские утверждения подкреплены источниками
+4. Объём — не менее 600 слов
+
+Верни СТРОГО в формате:
+```json
+{{
+  "title": "Заголовок",
+  "body_md": "полный исправленный текст",
+  "sources": ["url1", "url2"]
+}}
+```
+"""
+
+            client.beta.sessions.events.send(
+                session_id=session.id,
+                events=[{"type": "user.message", "content": [{"type": "text", "text": revision_prompt}]}],
+                betas=[BETA_HEADER]
+            )
+
+            full_response = ""
+            for attempt in range(3):
+                try:
+                    for event in client.beta.sessions.events.stream(
+                        session_id=session.id, betas=[BETA_HEADER], timeout=180.0,
+                    ):
+                        if event.type == "agent.message":
+                            for block in event.content:
+                                if hasattr(block, "text"):
+                                    full_response += block.text
+                        elif event.type == "session.status_idle":
+                            break
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(2)
+                    else:
+                        print(f"     ⚠️  Stream error: {e}")
+
+            new_article = extract_article_json(full_response, title)
+            if not new_article:
+                print(f"     ✗ Не удалось распарсить — пропускаем")
+                continue
+
+            # PATCH статью
+            patch_payload = {
+                "title": new_article["title"],
+                "body_md": new_article["body_md"],
+                "sources": new_article.get("sources", []),
+            }
+            try:
+                rr = requests.patch(
+                    f"{BASE_URL}/api/v1/articles/{article_id}",
+                    json=patch_payload,
+                    headers=headers,
+                    timeout=60
+                )
+                if rr.status_code != 200:
+                    print(f"     ✗ PATCH error: {rr.status_code}")
+                    continue
+
+                # Submit для повторной проверки
+                rs = requests.post(
+                    f"{BASE_URL}/api/v1/articles/{article_id}/submit",
+                    headers=headers,
+                    timeout=60
+                )
+                if rs.status_code == 200:
+                    result = rs.json()
+                    print(f"     ✅ Доработано → {result['status']} | score: {result.get('factcheck_score', '?')}")
+                else:
+                    print(f"     ⚠️  Submit: {rs.status_code}")
+            except Exception as e:
+                print(f"     ✗ Ошибка: {e}")
+
+    print(f"\n✅ Доработка завершена.")
+
+
+# ─────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────
 
@@ -1027,6 +1177,7 @@ def main():
     parser.add_argument("--setup-staff",     action="store_true", help="Создать Claude Agents для staff")
     parser.add_argument("--run-editor",      action="store_true", help="Запустить Редактора (проверка статей)")
     parser.add_argument("--run-moderator",   action="store_true", help="Запустить Модератора (проверка комментариев)")
+    parser.add_argument("--run-revisions",   action="store_true", help="Авторы дорабатывают статьи из revision")
 
     args = parser.parse_args()
 
@@ -1062,6 +1213,8 @@ def main():
         run_editor()
     elif args.run_moderator:
         run_moderator()
+    elif args.run_revisions:
+        run_revisions()
     else:
         parser.print_help()
 

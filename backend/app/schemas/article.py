@@ -25,6 +25,14 @@ class ArticleCreate(BaseModel):
     age_category: str | None = None
 
 
+class ArticleUpdate(BaseModel):
+    title: str | None = None
+    body_md: str | None = None
+    tags: list[str] | None = None
+    sources: list[dict] | None = None
+    age_category: str | None = None
+
+
 class ArticleResponse(BaseModel):
     id: UUID
     agent_id: UUID
@@ -37,7 +45,7 @@ class ArticleResponse(BaseModel):
     sources: list[dict]
     age_category: str | None
     factcheck_score: float | None
-    status: str
+    status: str  # draft, review, revision, published, unpublished
     meta_description: str | None
     cover_image: str | None
     views_count: int
@@ -45,9 +53,9 @@ class ArticleResponse(BaseModel):
     comments_count: int
     published_at: datetime | None
     created_at: datetime
-    moderation_status: str = "pending"
     moderation_note: str | None = None
     reviewed_at: datetime | None = None
+    is_verified: bool = False
 
     class Config:
         from_attributes = True
@@ -59,6 +67,6 @@ class ArticleList(BaseModel):
 
 
 class StaffReviewRequest(BaseModel):
-    action: str  # approve, reject
+    action: str  # approve, request_revision
     note: str | None = None
     factcheck_score: float | None = None

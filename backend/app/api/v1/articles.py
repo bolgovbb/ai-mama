@@ -12,7 +12,7 @@ from app.database import get_db
 from app.api.deps import get_current_agent
 from app.models.agent import Agent
 from app.models.article import Article
-from app.schemas.article import ArticleCreate, ArticleResponse, ArticleList, AuthorProfile
+from app.schemas.article import ArticleCreate, ArticleUpdate, ArticleResponse, ArticleList, AuthorProfile
 from app.services.rag import factcheck_article
 from app.services.cover_image import generate_cover_svg
 import redis.asyncio as aioredis
@@ -34,6 +34,7 @@ def _article_response(article: Article) -> ArticleResponse:
     data["author"] = AuthorProfile.model_validate(article.agent) if article.agent else None
     if isinstance(data.get("sources"), dict):
         data["sources"] = data["sources"].get("original", [])
+    data["is_verified"] = (article.status == "published" and article.reviewed_by is not None)
     return ArticleResponse.model_validate(data)
 
 
@@ -93,50 +94,97 @@ async def get_article(slug: str, db: AsyncSession = Depends(get_db)):
     return _article_response(article)
 
 
-@router.post("/{article_id}/publish", response_model=ArticleResponse)
-async def publish_article(
+@router.post("/{article_id}/submit", response_model=ArticleResponse)
+async def submit_article(
     article_id: uuid.UUID,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db)
 ):
+    """Отправить статью на проверку. Factcheck → если score ≥ 50 → review, иначе draft."""
     result = await db.execute(
         select(Article).options(selectinload(Article.agent)).where(Article.id == article_id)
     )
     article = result.scalar_one_or_none()
     if not article or article.agent_id != agent.id:
         raise HTTPException(404, "Article not found")
+    if article.status not in ("draft", "revision"):
+        raise HTTPException(400, f"Cannot submit article in status '{article.status}'")
+
     rag_result = await factcheck_article(article.title, article.body_md, article.sources or [])
     article.factcheck_score = rag_result["score"]
     article.sources = {
         "original": article.sources if isinstance(article.sources, list) else [],
         "rag_metadata": rag_result,
     }
-    if article.factcheck_score >= 70.0:
-        article.status = "published"
-        article.published_at = datetime.now(timezone.utc)
-        article.cover_image = f"/api/v1/articles/{article.slug}/cover-image"
-        try:
-            r = aioredis.from_url(settings.redis_url, decode_responses=True)
-            await r.publish("feed", json.dumps({
-                "type": "new_article",
-                "id": str(article.id),
-                "title": article.title,
-                "slug": article.slug,
-                "tags": article.tags,
-                "factcheck_score": article.factcheck_score,
-            }))
-            for tag in (article.tags or []):
-                await r.publish("topics", json.dumps({
-                    "type": "new_article",
-                    "article_id": str(article.id),
-                    "title": article.title,
-                    "tags": article.tags,
-                }))
-            await r.aclose()
-        except Exception:
-            pass
+    article.cover_image = f"/api/v1/articles/{article.slug}/cover-image"
+
+    if article.factcheck_score >= 50.0:
+        article.status = "review"
+        article.moderation_note = None
+        article.reviewed_by = None
+        article.reviewed_at = None
     else:
-        article.status = "flagged"
+        article.status = "draft"
+        article.moderation_note = f"Factcheck score {article.factcheck_score:.0f}% — недостаточно для отправки на проверку. Добавьте источники и дисклеймер."
+
+    await db.commit()
+    await db.refresh(article, ["agent"])
+    return _article_response(article)
+
+
+@router.get("/my/revisions", response_model=list[ArticleResponse])
+async def my_revisions(
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db)
+):
+    """Статьи текущего агента со статусом revision (возвращены на доработку)."""
+    result = await db.execute(
+        select(Article).options(selectinload(Article.agent))
+        .where(Article.agent_id == agent.id, Article.status == "revision")
+        .order_by(Article.created_at)
+    )
+    return [_article_response(a) for a in result.scalars().all()]
+
+
+@router.patch("/{article_id}", response_model=ArticleResponse)
+async def update_article(
+    article_id: uuid.UUID,
+    data: ArticleUpdate,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновить статью. Если published — сбрасывает в review для повторной проверки."""
+    result = await db.execute(
+        select(Article).options(selectinload(Article.agent)).where(Article.id == article_id)
+    )
+    article = result.scalar_one_or_none()
+    if not article or article.agent_id != agent.id:
+        raise HTTPException(404, "Article not found")
+    if article.status == "review":
+        raise HTTPException(400, "Article is under review, cannot edit")
+
+    if data.title is not None:
+        article.title = data.title
+    if data.body_md is not None:
+        article.body_md = data.body_md
+        article.body_html = bleach.clean(
+            markdown.markdown(data.body_md, extensions=["extra", "codehilite"]),
+            tags=ALLOWED_TAGS
+        )
+    if data.tags is not None:
+        article.tags = data.tags
+    if data.sources is not None:
+        article.sources = data.sources
+    if data.age_category is not None:
+        article.age_category = data.age_category
+
+    # Если статья была published — сбросить в review для повторной проверки
+    if article.status == "published":
+        article.status = "review"
+        article.reviewed_by = None
+        article.reviewed_at = None
+        article.moderation_note = "Статья изменена после публикации — требует повторной проверки."
+
     await db.commit()
     await db.refresh(article, ["agent"])
     return _article_response(article)
