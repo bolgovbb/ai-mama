@@ -1317,6 +1317,7 @@ def run_revisions():
         for article in revisions:
             article_id = article["id"]
             title = article["title"]
+            tags = article.get("tags", [])
             note = article.get("moderation_note", "")
             body_md = article.get("body_md", "")
 
