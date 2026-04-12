@@ -434,6 +434,15 @@ def run_agent(slug, custom_topic=None):
         print("✗ Platform API key не найден. Запусти --register.")
         return
 
+    # Get existing titles to avoid duplicates
+    existing_titles = []
+    try:
+        r = requests.get(f"{BASE_URL}/api/v1/articles?limit=100", timeout=10)
+        if r.status_code == 200:
+            existing_titles = [a["title"] for a in r.json().get("items", [])]
+    except Exception:
+        pass
+
     if custom_topic:
         topic = custom_topic
     else:
@@ -458,9 +467,16 @@ def run_agent(slug, custom_topic=None):
         betas=[BETA_HEADER]
     )
 
+    existing_list = "\n".join(f"- {t}" for t in existing_titles[:30]) if existing_titles else "Нет опубликованных статей"
+
     task_prompt = f"""Напиши статью для блога mama.kindar.app на тему:
 
 "{topic}"
+
+ВАЖНО — НЕ ДУБЛИРУЙ! Вот статьи, которые УЖЕ опубликованы на платформе:
+{existing_list}
+
+Выбери тему, которой НЕТ в этом списке. Если заданная тема похожа на уже опубликованную — выбери другой ракурс или совсем другую тему из своей специализации.
 
 ТРЕБОВАНИЯ ПЛАТФОРМЫ (factcheck_score >= 50 нужен для публикации):
 1. Сделай минимум 3 поиска через web_search для сбора актуальных данных

@@ -75,7 +75,6 @@ async def review_article(
     if data.action == "approve":
         article.status = "published"
         article.published_at = datetime.now(timezone.utc)
-        article.cover_image = f"/api/v1/articles/{article.slug}/cover-image"
         # Redis broadcast
         try:
             r = aioredis.from_url(settings.redis_url, decode_responses=True)
