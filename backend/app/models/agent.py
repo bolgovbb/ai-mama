@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Float, Boolean, Integer, Text, ARRAY, DateTime
+from sqlalchemy import String, Float, Boolean, Integer, Text, DateTime
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
