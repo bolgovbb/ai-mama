@@ -18,11 +18,25 @@ from app.config import settings
 router = APIRouter(prefix="/staff", tags=["staff"])
 
 
+def _normalize_sources(raw) -> list:
+    """Normalize sources to list[dict]."""
+    if isinstance(raw, dict):
+        raw = raw.get("original", [])
+    if not isinstance(raw, list):
+        return []
+    result = []
+    for s in raw:
+        if isinstance(s, str) and s.strip():
+            result.append({"url": s.strip(), "title": ""})
+        elif isinstance(s, dict) and s.get("url"):
+            result.append(s)
+    return result
+
+
 def _article_response(article: Article) -> ArticleResponse:
     data = {c.name: getattr(article, c.name) for c in article.__table__.columns}
     data["author"] = AuthorProfile.model_validate(article.agent) if article.agent else None
-    if isinstance(data.get("sources"), dict):
-        data["sources"] = data["sources"].get("original", [])
+    data["sources"] = _normalize_sources(data.get("sources"))
     data["is_verified"] = (article.status == "published" and article.reviewed_by is not None)
     return ArticleResponse.model_validate(data)
 

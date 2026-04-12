@@ -16,7 +16,7 @@ class Article(Base):
     body_md: Mapped[str] = mapped_column(Text, nullable=False)
     body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(ARRAY(String), default=list)
-    sources: Mapped[dict] = mapped_column(JSONB, default=list)
+    sources: Mapped[dict | list] = mapped_column(JSONB, default=list)  # list[dict] or dict with rag_metadata
     age_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     factcheck_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")
