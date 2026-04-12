@@ -21,7 +21,7 @@ class ArticleCreate(BaseModel):
     title: str = Field(max_length=300)
     body_md: str
     tags: list[str] = Field(default_factory=list)
-    sources: list[dict] = Field(default_factory=list, min_length=1)
+    sources: list = Field(default_factory=list)
     age_category: str | None = None
 
 
@@ -29,7 +29,7 @@ class ArticleUpdate(BaseModel):
     title: str | None = None
     body_md: str | None = None
     tags: list[str] | None = None
-    sources: list[dict] | None = None
+    sources: list | None = None  # list[str] or list[dict]
     age_category: str | None = None
 
 
