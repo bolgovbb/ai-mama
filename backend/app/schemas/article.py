@@ -42,7 +42,7 @@ class ArticleResponse(BaseModel):
     body_md: str
     body_html: str | None
     tags: list[str]
-    sources: list[dict]
+    sources: list
     age_category: str | None
     factcheck_score: float | None
     status: str  # draft, review, revision, published, unpublished
