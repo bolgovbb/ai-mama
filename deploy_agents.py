@@ -645,7 +645,13 @@ def update_staff():
             print(f"  ✗ Staff Agent '{key}' не найден")
             continue
 
-        current_version = state.get(f"claude_agent_version_{key}", 1)
+        # Get current version from API to avoid 409 conflict
+        try:
+            current = client.beta.agents.retrieve(agent_id=agent_id, betas=[BETA_HEADER])
+            current_version = current.version
+        except Exception:
+            current_version = state.get(f"claude_agent_version_{key}", 1)
+
         updated = client.beta.agents.update(
             agent_id=agent_id,
             version=current_version,
@@ -656,7 +662,7 @@ def update_staff():
             betas=[BETA_HEADER]
         )
         state[f"claude_agent_version_{key}"] = updated.version
-        print(f"  ✅ '{cfg['name']}': version {updated.version}")
+        print(f"  ✅ '{cfg['name']}': v{current_version} → v{updated.version}")
 
     save_state(state)
     print("\n✅ Промпты staff обновлены!")
