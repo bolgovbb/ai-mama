@@ -39,10 +39,17 @@ STATE_FILE  = Path("agents_state.json")
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # Теги платформы для каждого агента
+# Единый рубрикатор (13 тем)
+RUBRIC_NAMES = [
+    "Беременность", "Роды", "Новорождённый", "Грудное вскармливание",
+    "Прикорм", "Развитие", "Здоровье", "Психология",
+    "Сон", "Игры", "Питание", "Воспитание", "Прочее",
+]
+
 AGENT_TAGS = {
-    "motherhood": ["Беременность", "Психология", "Здоровье"],
-    "parenting":  ["Развитие", "Психология", "Игры", "Сон"],
-    "health":     ["Здоровье", "Новорождённый", "Прикорм"],
+    "motherhood": ["Беременность", "Роды", "Психология", "Грудное вскармливание"],
+    "parenting":  ["Развитие", "Воспитание", "Психология", "Игры", "Сон"],
+    "health":     ["Здоровье", "Новорождённый", "Прикорм", "Питание"],
 }
 
 # Авторитетные источники — поднимают factcheck_score
@@ -496,17 +503,21 @@ def run_agent(slug, custom_topic=None):
 ...
 ⚠️ [Дисклеймер с нужным специалистом]
 
+ТЕГИ — выбери 1-3 из рубрикатора: {', '.join(tags)}
+Если не подходит ни один — используй "Прочее".
+
 После написания верни СТРОГО в этом формате:
 
 ```json
 {{
   "title": "Заголовок статьи",
   "body_md": "полный текст в markdown",
+  "tags": ["тег1", "тег2"],
   "sources": ["url1", "url2", "url3"]
 }}
 ```
 
-sources — реальные URL из твоих поисков.
+sources — реальные URL из твоих поисков. tags — из рубрикатора выше.
 """
 
     client.beta.sessions.events.send(
@@ -570,6 +581,8 @@ sources — реальные URL из твоих поисков.
         return
 
     all_sources = _normalize_sources(article.get("sources", []) + sources)
+    # Use tags from agent response if available, fallback to AGENT_TAGS
+    article_tags = article.get("tags", tags)
     print(f"  📤 Публикуем: {article['title'][:60]}...")
 
     try:
@@ -577,7 +590,7 @@ sources — реальные URL из твоих поисков.
             slug=slug,
             title=article["title"],
             body_md=article["body_md"],
-            tags=tags,
+            tags=article_tags,
             sources=all_sources,
             api_key=platform_key,
         )
@@ -1112,11 +1125,11 @@ def run_editor():
             continue
 
         action = review.get("action", "approve")
-        # Normalize: reject → request_revision
         if action == "reject":
             action = "request_revision"
         score = review.get("factcheck_score")
         note = review.get("note", "")
+        editor_tags = review.get("tags", [])
 
         review_payload = {
             "action": action,
@@ -1136,6 +1149,17 @@ def run_editor():
                 icon = "✅" if action == "approve" else "📝"
                 label = "published" if action == "approve" else "→ revision"
                 print(f"     {icon} {label} | score: {score} | {note[:80]}")
+                # Apply editor's tags if provided
+                if action == "approve" and editor_tags:
+                    valid_tags = [t for t in editor_tags if t in RUBRIC_NAMES]
+                    if valid_tags:
+                        requests.patch(
+                            f"{BASE_URL}/api/v1/articles/{article_id}",
+                            json={"tags": valid_tags},
+                            headers={"Authorization": f"Bearer {staff_key}", "Content-Type": "application/json"},
+                            timeout=15
+                        )
+                        print(f"     🏷️ Теги: {', '.join(valid_tags)}")
             else:
                 print(f"     ✗ Review API error: {rr.status_code}")
         except Exception as e:

@@ -53,6 +53,30 @@ COVERS_DIR = Path(__file__).parent / "static" / "covers"
 COVERS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
+RUBRICS = [
+    {"name": "Беременность", "icon": "🤰", "slug": "beremennost"},
+    {"name": "Роды", "icon": "👶", "slug": "rody"},
+    {"name": "Новорождённый", "icon": "🍼", "slug": "novorozhdennyy"},
+    {"name": "Грудное вскармливание", "icon": "🤱", "slug": "grudnoe-vskarmlivanie"},
+    {"name": "Прикорм", "icon": "🥕", "slug": "prikorm"},
+    {"name": "Развитие", "icon": "🧸", "slug": "razvitie"},
+    {"name": "Здоровье", "icon": "💊", "slug": "zdorovye"},
+    {"name": "Психология", "icon": "🧠", "slug": "psikhologiya"},
+    {"name": "Сон", "icon": "😴", "slug": "son"},
+    {"name": "Игры", "icon": "🎮", "slug": "igry"},
+    {"name": "Питание", "icon": "🥗", "slug": "pitanie"},
+    {"name": "Воспитание", "icon": "📖", "slug": "vospitanie"},
+    {"name": "Прочее", "icon": "📌", "slug": "prochee"},
+]
+RUBRIC_NAMES = {r["name"] for r in RUBRICS}
+RUBRIC_LOWER = {r["name"].lower(): r["name"] for r in RUBRICS}
+
+
+@app.get("/api/v1/rubrics")
+async def get_rubrics():
+    return RUBRICS
+
+
 @app.get("/api/v1/health")
 async def health():
     return {"status": "ok", "version": "1.0.0", "features": ["rate-limit", "websocket", "rag", "cascade-detection", "staff-moderation"]}

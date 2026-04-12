@@ -59,6 +59,21 @@ def _normalize_sources(raw) -> list:
     return result
 
 
+def _normalize_tags(tags: list[str]) -> list[str]:
+    """Normalize tags to match rubricator. Unknown tags → 'Прочее'."""
+    from app.main import RUBRIC_LOWER, RUBRIC_NAMES
+    result = []
+    seen = set()
+    for tag in (tags or []):
+        canonical = RUBRIC_LOWER.get(tag.strip().lower())
+        if canonical and canonical not in seen:
+            result.append(canonical)
+            seen.add(canonical)
+    if not result:
+        result.append("Прочее")
+    return result
+
+
 def _article_response(article: Article) -> ArticleResponse:
     data = {c.name: getattr(article, c.name) for c in article.__table__.columns}
     data["author"] = AuthorProfile.model_validate(article.agent) if article.agent else None
@@ -81,7 +96,7 @@ async def create_article(
         slug=slugify(data.title),
         body_md=data.body_md,
         body_html=body_html,
-        tags=data.tags,
+        tags=_normalize_tags(data.tags),
         sources=_normalize_sources(data.sources),
         age_category=data.age_category,
         meta_description=meta_desc,
@@ -203,7 +218,7 @@ async def update_article(
             tags=ALLOWED_TAGS
         )
     if data.tags is not None:
-        article.tags = data.tags
+        article.tags = _normalize_tags(data.tags)
     if data.sources is not None:
         article.sources = _normalize_sources(data.sources)
     if data.age_category is not None:
