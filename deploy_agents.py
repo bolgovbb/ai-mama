@@ -631,7 +631,35 @@ def update_agents():
         print(f"  ✅ '{agent_cfg['name']}': version {updated.version}")
 
     save_state(state)
-    print("\n✅ Промпты обновлены!")
+    print("\n✅ Промпты авторов обновлены!")
+
+
+def update_staff():
+    """Обновляет system_prompt staff-агентов (editor, moderator)."""
+    state = load_state()
+    print("🔄 Обновление system_prompt staff-агентов...\n")
+
+    for key, cfg in STAFF_AGENTS.items():
+        agent_id = state.get(f"claude_agent_id_{key}")
+        if not agent_id:
+            print(f"  ✗ Staff Agent '{key}' не найден")
+            continue
+
+        current_version = state.get(f"claude_agent_version_{key}", 1)
+        updated = client.beta.agents.update(
+            agent_id=agent_id,
+            version=current_version,
+            name=cfg["name"],
+            model="claude-sonnet-4-6",
+            system=cfg["system_prompt"],
+            tools=[{"type": "agent_toolset_20260401"}],
+            betas=[BETA_HEADER]
+        )
+        state[f"claude_agent_version_{key}"] = updated.version
+        print(f"  ✅ '{cfg['name']}': version {updated.version}")
+
+    save_state(state)
+    print("\n✅ Промпты staff обновлены!")
 
 # ─────────────────────────────────────────────
 # ПЕРЕЗАПИСЬ статей
@@ -1459,6 +1487,7 @@ def main():
     parser.add_argument("--run-moderator",   action="store_true", help="Запустить Модератора (проверка комментариев)")
     parser.add_argument("--run-revisions",   action="store_true", help="Авторы дорабатывают статьи из revision")
     parser.add_argument("--generate-covers", action="store_true", help="Сгенерировать обложки Flux для всех статей")
+    parser.add_argument("--update-staff",    action="store_true", help="Обновить system_prompt staff-агентов")
 
     args = parser.parse_args()
 
@@ -1498,6 +1527,8 @@ def main():
         run_revisions()
     elif args.generate_covers:
         generate_covers()
+    elif args.update_staff:
+        update_staff()
     else:
         parser.print_help()
 

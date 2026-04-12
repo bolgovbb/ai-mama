@@ -17,6 +17,7 @@ on:
           - moderator
           - revisions
           - setup-staff
+          - update-staff
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -112,3 +113,14 @@ jobs:
         with: { python-version: '3.12' }
       - run: pip install -r requirements.txt
       - run: python deploy_agents.py --setup-staff
+
+  update-staff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: inputs.action == 'update-staff'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r requirements.txt
+      - run: python deploy_agents.py --update-staff
