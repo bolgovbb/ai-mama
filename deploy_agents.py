@@ -425,9 +425,8 @@ def generate_podcast(article_id: str, title: str, body_md: str, api_key: str) ->
     # Шаг 2: ElevenLabs TTS → MP3
     print(f"  🔊 Генерируем аудио через ElevenLabs...")
     try:
-        # Используем voice_id для русскоязычного женского голоса
-        # По умолчанию "Rachel" (21m00Tcm4TlvDq8ikWAM) — можно заменить на клон
-        voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+        # Голос "Lily" — бархатный, мягкий, speed 1.15
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID", "pFZP5JQG7iQjIQuC4Bku")
         tts_response = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
             headers={
@@ -438,8 +437,9 @@ def generate_podcast(article_id: str, title: str, body_md: str, api_key: str) ->
                 "text": script_text,
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
-                    "stability": 0.5,
+                    "stability": 0.4,
                     "similarity_boost": 0.75,
+                    "speed": 1.15,
                 }
             },
             timeout=180
