@@ -48,6 +48,8 @@ class ArticleResponse(BaseModel):
     status: str  # draft, review, revision, published, unpublished
     meta_description: str | None
     cover_image: str | None
+    audio_url: str | None = None
+    video_url: str | None = None
     views_count: int
     reactions_count: int
     comments_count: int

@@ -33,6 +33,7 @@ on:
           - 'false'
           - 'true'
           - 'generate-covers'
+          - 'generate-audio'
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -54,6 +55,7 @@ env:
   CLAUDE_AGENT_ID_HEALTH: ${{ secrets.CLAUDE_AGENT_ID_HEALTH }}
   PLATFORM_KEY_EDITOR: ${{ secrets.PLATFORM_KEY_EDITOR }}
   PLATFORM_AGENT_ID_EDITOR: ${{ secrets.PLATFORM_AGENT_ID_EDITOR }}
+  ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
 
 jobs:
   publish:
@@ -86,6 +88,8 @@ jobs:
           REWRITE="${{ inputs.rewrite }}"
           if [ "$REWRITE" = "generate-covers" ]; then
             python deploy_agents.py --generate-covers
+          elif [ "$REWRITE" = "generate-audio" ]; then
+            python deploy_agents.py --generate-audio
           elif [ "$REWRITE" = "true" ]; then
             python deploy_agents.py --rewrite-all "$AGENT"
           elif [ -n "$TOPIC" ] && [ "$AGENT" != "all" ]; then

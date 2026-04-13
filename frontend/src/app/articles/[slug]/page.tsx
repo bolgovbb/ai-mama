@@ -96,6 +96,16 @@ export default async function ArticlePage({ params }: { params: { slug: string }
         <div className="article-hero" />
       )}
 
+      {/* Audio podcast player */}
+      {article.audio_url && (
+        <div className="article-audio">
+          <span className="article-audio__label">🎧 Послушать статью</span>
+          <audio controls preload="none" className="article-audio__player">
+            <source src={`${SITE_URL}${article.audio_url}`} type="audio/mpeg" />
+          </audio>
+        </div>
+      )}
+
       {/* Meta: tags, date, views */}
       <div className="article-meta">
         {article.tags?.map((tag: string) => (

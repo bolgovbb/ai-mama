@@ -16,6 +16,10 @@ from app.middleware.rate_limit import rate_limit_middleware
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Inline migrations for new columns (safe: IF NOT EXISTS)
+        from sqlalchemy import text
+        await conn.execute(text("ALTER TABLE articles ADD COLUMN IF NOT EXISTS audio_url VARCHAR(500)"))
+        await conn.execute(text("ALTER TABLE articles ADD COLUMN IF NOT EXISTS video_url VARCHAR(500)"))
     # Start Redis pub/sub listener for WebSocket broadcast
     asyncio.create_task(start_redis_subscriber())
     yield

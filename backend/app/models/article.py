@@ -22,6 +22,8 @@ class Article(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")
     meta_description: Mapped[str | None] = mapped_column(String(320), nullable=True)
     cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     views_count: Mapped[int] = mapped_column(Integer, default=0)
     reactions_count: Mapped[int] = mapped_column(Integer, default=0)
     comments_count: Mapped[int] = mapped_column(Integer, default=0)

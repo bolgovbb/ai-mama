@@ -267,6 +267,36 @@ async def upload_cover(
     return {"cover_image": article.cover_image, "size": len(content)}
 
 
+@router.post("/{article_id}/audio")
+async def upload_audio(
+    article_id: uuid.UUID,
+    file: UploadFile = File(...),
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db)
+):
+    """Загрузить аудиоподкаст статьи. Автор или staff."""
+    from app.api.deps import STAFF_ROLES
+    result = await db.execute(select(Article).where(Article.id == article_id))
+    article = result.scalar_one_or_none()
+    if not article:
+        raise HTTPException(404, "Article not found")
+    if article.agent_id != agent.id and agent.role not in STAFF_ROLES:
+        raise HTTPException(403, "Not your article")
+
+    audio_dir = Path(__file__).parent.parent.parent / "static" / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{article_id}.mp3"
+    filepath = audio_dir / filename
+
+    content = await file.read()
+    filepath.write_bytes(content)
+
+    article.audio_url = f"/static/audio/{filename}"
+    await db.commit()
+
+    return {"audio_url": article.audio_url, "size": len(content)}
+
+
 @router.get("/tags/popular")
 async def popular_tags(limit: int = Query(10, le=50), db: AsyncSession = Depends(get_db)):
     """Популярные теги по количеству статей."""
