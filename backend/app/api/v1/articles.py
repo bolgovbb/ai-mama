@@ -109,6 +109,32 @@ async def create_article(
     return _article_response(article)
 
 
+@router.get("/search")
+async def search_articles(
+    q: str = Query(..., min_length=2),
+    limit: int = Query(8, le=20),
+    db: AsyncSession = Depends(get_db)
+):
+    """Поиск статей по заголовку и тексту."""
+    from sqlalchemy import or_, cast, String
+    search_term = f"%{q.lower()}%"
+    result = await db.execute(
+        select(Article).options(selectinload(Article.agent))
+        .where(
+            Article.status == "published",
+            or_(
+                func.lower(Article.title).like(search_term),
+                func.lower(Article.body_md).like(search_term),
+                func.lower(cast(Article.tags, String)).like(search_term),
+            )
+        )
+        .order_by(desc(Article.views_count))
+        .limit(limit)
+    )
+    articles = result.scalars().all()
+    return {"items": [_article_response(a) for a in articles], "total": len(articles)}
+
+
 @router.get("/{slug}/cover-image")
 async def get_article_cover_image(slug: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Article).where(Article.slug == slug))
