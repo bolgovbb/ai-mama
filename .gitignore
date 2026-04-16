@@ -24,6 +24,9 @@ build/
 *.sqlite3
 *.db
 
+# Generated media
+frontend/public/audio_*.mp3
+
 # OS
 .DS_Store
 Thumbs.db
