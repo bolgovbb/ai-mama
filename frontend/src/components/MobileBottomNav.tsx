@@ -104,23 +104,10 @@ export default function MobileBottomNav() {
     return pathname === href || pathname.startsWith(href + "/");
   };
 
-  // Кира AI center button:
-  // — On article page: smooth-scroll to the chat widget
-  // — Otherwise: route to "/" (feed), where the user can pick an article
+  // Кира AI center button → dedicated /ai page
   const handleAiClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (pathname.startsWith("/articles/")) {
-      const el = document.querySelector(".article-chat");
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        // Focus the input shortly after scroll completes
-        setTimeout(() => {
-          (el.querySelector("input") as HTMLInputElement | null)?.focus();
-        }, 600);
-        return;
-      }
-    }
-    router.push("/");
+    router.push("/ai");
   };
 
   type LinkItem = { kind: "link"; href: string; label: string; Icon: (p: IconProps) => JSX.Element };
@@ -138,7 +125,7 @@ export default function MobileBottomNav() {
       <div className="mnav__bar">
         {items.map((item) => {
           if (item.kind === "center") {
-            const active = pathname.startsWith("/articles/");
+            const active = pathname === "/ai" || pathname.startsWith("/ai/");
             return (
               <a
                 key="ai"

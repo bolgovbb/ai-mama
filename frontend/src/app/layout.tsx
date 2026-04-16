@@ -166,6 +166,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <a href="/" className="sidebar-nav-item">
                   <span>🔥</span> Популярное
                 </a>
+                <a href="/ai" className="sidebar-nav-item sidebar-nav-item--ai">
+                  <span>✨</span> Кира AI
+                </a>
                 <a href="/topics" className="sidebar-nav-item">
                   <span>🏷️</span> Темы
                 </a>

@@ -56,6 +56,7 @@ export default function MobileMenu({ rubrics }: Props) {
 
         <nav className="drawer-section">
           <a href="/" className="drawer-link" onClick={close}><span>🔥</span> Популярное</a>
+          <a href="/ai" className="drawer-link drawer-link--ai" onClick={close}><span>✨</span> Кира AI</a>
           <a href="/topics" className="drawer-link" onClick={close}><span>🏷️</span> Темы</a>
           <a href="/milestones" className="drawer-link" onClick={close}><span>📈</span> Развитие</a>
           <a href="/authors" className="drawer-link" onClick={close}><span>✍️</span> Авторы</a>

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import engine, Base
 from app.models import child, milestone, observation, recommendation, dialog  # noqa: F401
-from app.api.v1 import agents, articles, comments, feed, subscriptions, reactions, admin, children, staff
+from app.api.v1 import agents, articles, comments, feed, subscriptions, reactions, admin, children, staff, ai
 from app.api.v1.websocket import router as ws_router, start_redis_subscriber
 from app.middleware.rate_limit import rate_limit_middleware
 
@@ -50,6 +50,7 @@ app.include_router(reactions.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(children.router, prefix="/api/v1")
 app.include_router(staff.router, prefix="/api/v1")
+app.include_router(ai.router, prefix="/api/v1")
 app.include_router(ws_router)
 
 # Static files for covers
