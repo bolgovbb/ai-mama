@@ -476,21 +476,95 @@ def generate_podcast(article_id: str, title: str, body_md: str, api_key: str) ->
         return None
 
 
+THINKING_PREFIXES = (
+    "Ищу ", "Ищу:", "Отлично", "Хорошо,", "Хорошо.", "Давайте",
+    "Начинаю", "Сначала", "Проверяю", "Проверю", "Обнаружил",
+    "Теперь", "Пишу ", "Пишу:", "Великолепно", "Нашёл", "Нашла",
+    "Прекрасно", "Понял", "Поняла", "Понятно", "Уточню",
+    "Итак,", "Итак.",
+)
+
+
+def _extract_last_balanced_json(text: str) -> str | None:
+    """Find the largest ```json ... ``` block and return its raw content.
+
+    Uses the LAST closing fence so nested braces inside the JSON body don't
+    truncate the match (the old non-greedy regex matched the first `}`).
+    """
+    fence = re.search(r"```json\s*(\{)", text)
+    if not fence:
+        fence = re.search(r"```\s*(\{)", text)
+    if not fence:
+        return None
+    start = fence.end() - 1  # position of the opening "{"
+    # Find the final ``` after start
+    closings = [m.start() for m in re.finditer(r"```", text[start:])]
+    if not closings:
+        return None
+    end = start + closings[-1]
+    # Walk back to the last "}" before the closing fence
+    body = text[start:end].rstrip()
+    last_brace = body.rfind("}")
+    if last_brace < 0:
+        return None
+    return body[: last_brace + 1]
+
+
+def _looks_like_thinking(title: str) -> bool:
+    t = title.strip()
+    if not t:
+        return True
+    if any(t.startswith(p) for p in THINKING_PREFIXES):
+        return True
+    # Real article titles are < ~200 chars. Anything longer almost always
+    # means the agent pasted a paragraph of meta-commentary as the title.
+    if len(t) > 200:
+        return True
+    return False
+
+
+def _is_valid_article(d) -> bool:
+    if not isinstance(d, dict):
+        return False
+    title = (d.get("title") or "").strip()
+    body = (d.get("body_md") or "").strip()
+    if not title or not body:
+        return False
+    if _looks_like_thinking(title):
+        return False
+    # Body must not contain a raw ```json block — that's a sign the agent's
+    # JSON structure leaked into the text.
+    if "```json" in body:
+        return False
+    return True
+
+
 def extract_article_json(text, fallback_title):
-    match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
-            pass
-    lines = [l for l in text.strip().split("\n") if l.strip()]
-    if lines:
-        return {
-            "title": lines[0].lstrip("#").strip() or fallback_title,
-            "body_md": text,
-            "sources": []
-        }
-    return None
+    """Parse the article JSON from the agent's response.
+
+    Returns None on any failure. Callers MUST treat None as "do not publish" —
+    we NEVER fall back to dumping raw text into the title/body, because that
+    leaks agent thinking ("Ищу актуальные данные…") straight to users.
+    """
+    raw = _extract_last_balanced_json(text)
+    if not raw:
+        print("✗ extract_article_json: no ```json ... ``` block in response")
+        return None
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"✗ extract_article_json: JSONDecodeError ({e}) — skipping publication")
+        snippet = raw[max(0, e.pos - 80): e.pos + 80] if hasattr(e, "pos") else raw[:160]
+        print(f"   near: {snippet!r}")
+        return None
+
+    if not _is_valid_article(parsed):
+        title_preview = (parsed.get("title") or "")[:80] if isinstance(parsed, dict) else ""
+        print(f"✗ extract_article_json: parsed JSON failed sanity check — title={title_preview!r}")
+        return None
+
+    return parsed
 
 # ─────────────────────────────────────────────
 # TELEGRAM уведомление

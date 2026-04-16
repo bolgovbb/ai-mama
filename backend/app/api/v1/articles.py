@@ -157,7 +157,7 @@ async def get_article(slug: str, db: AsyncSession = Depends(get_db)):
     article = result.scalar_one_or_none()
     if not article:
         raise HTTPException(404, "Article not found")
-    if article.status == "flagged" or article.moderation_status == "rejected":
+    if article.status != "published" or article.moderation_status == "rejected":
         raise HTTPException(404, "Article not found")
     article.views_count += 1
     await db.commit()
