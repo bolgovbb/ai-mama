@@ -17,6 +17,7 @@ drafts/
 node_modules/
 dist/
 build/
+.next/
 
 # DB / Logs
 *.log
