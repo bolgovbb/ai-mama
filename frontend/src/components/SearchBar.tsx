@@ -14,7 +14,9 @@ export default function SearchBar() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
@@ -26,6 +28,18 @@ export default function SearchBar() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") { setMobileOpen(false); setIsOpen(false); } }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    if (mobileOpen && inputRef.current) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [mobileOpen]);
 
   const doSearch = async (q: string) => {
     if (q.length < 2) { setResults([]); setIsOpen(false); return; }
@@ -48,67 +62,108 @@ export default function SearchBar() {
     timerRef.current = setTimeout(() => doSearch(val), 300);
   };
 
-  return (
-    <div ref={ref} className="header-search" style={{ position: "relative" }}>
-      <input
-        type="text"
-        placeholder="Поиск статей..."
-        value={query}
-        onChange={handleChange}
-        onFocus={() => results.length > 0 && setIsOpen(true)}
-      />
-      <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-      </svg>
+  const closeMobile = () => { setMobileOpen(false); setIsOpen(false); };
 
-      {isOpen && (
-        <div style={{
-          position: "absolute", top: "100%", left: 0, right: 0,
-          background: "var(--color-card)", border: "1px solid var(--color-border)",
-          borderRadius: 12, marginTop: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-          zIndex: 1000, maxHeight: 400, overflowY: "auto",
-        }}>
-          {loading && (
-            <div style={{ padding: "12px 16px", color: "var(--color-text-secondary)", fontSize: 13 }}>
-              Ищем...
+  const resultsList = isOpen && (
+    <div className="search-results">
+      {loading && (
+        <div className="search-results__msg">Ищем...</div>
+      )}
+      {!loading && results.length === 0 && query.length >= 2 && (
+        <div className="search-results__msg">Ничего не найдено по запросу «{query}»</div>
+      )}
+      {results.map((r) => (
+        <a
+          key={r.slug}
+          href={`/articles/${r.slug}`}
+          onClick={closeMobile}
+          className="search-result-item"
+        >
+          <div className="search-result-item__title">{r.title}</div>
+          {r.meta_description && (
+            <div className="search-result-item__desc">{r.meta_description.slice(0, 100)}...</div>
+          )}
+          {r.tags?.length > 0 && (
+            <div className="search-result-item__tags">
+              {r.tags.slice(0, 3).map(t => (
+                <span key={t} className="search-result-item__tag">{t}</span>
+              ))}
             </div>
           )}
-          {!loading && results.length === 0 && query.length >= 2 && (
-            <div style={{ padding: "12px 16px", color: "var(--color-text-secondary)", fontSize: 13 }}>
-              Ничего не найдено по запросу &laquo;{query}&raquo;
-            </div>
-          )}
-          {results.map((r) => (
-            <a
-              key={r.slug}
-              href={`/articles/${r.slug}`}
-              onClick={() => setIsOpen(false)}
-              style={{
-                display: "block", padding: "10px 16px", textDecoration: "none",
-                borderBottom: "1px solid var(--color-border)", color: "inherit",
-              }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text)", marginBottom: 3 }}>
-                {r.title}
+        </a>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop inline search + mobile trigger button */}
+      <div ref={ref} className="header-search">
+        <input
+          type="text"
+          placeholder="Поиск статей..."
+          value={query}
+          onChange={handleChange}
+          onFocus={() => results.length > 0 && setIsOpen(true)}
+        />
+        <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        {resultsList}
+      </div>
+
+      <button
+        className="search-trigger-mobile"
+        aria-label="Поиск"
+        onClick={() => setMobileOpen(true)}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+      </button>
+
+      {/* Mobile fullscreen search overlay */}
+      {mobileOpen && (
+        <div className="search-mobile-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeMobile(); }}>
+          <div className="search-mobile-panel">
+            <div className="search-mobile-bar">
+              <div className="search-mobile-input-wrap">
+                <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Поиск статей..."
+                  value={query}
+                  onChange={handleChange}
+                  autoFocus
+                />
               </div>
-              {r.meta_description && (
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.4 }}>
-                  {r.meta_description.slice(0, 100)}...
-                </div>
+              <button className="search-mobile-cancel" onClick={closeMobile} aria-label="Отмена">
+                Отмена
+              </button>
+            </div>
+            <div className="search-mobile-results">
+              {loading && <div className="search-results__msg">Ищем...</div>}
+              {!loading && results.length === 0 && query.length >= 2 && (
+                <div className="search-results__msg">Ничего не найдено по запросу «{query}»</div>
               )}
-              {r.tags?.length > 0 && (
-                <div style={{ marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {r.tags.slice(0, 3).map(t => (
-                    <span key={t} style={{ fontSize: 10, background: "var(--color-primary)", color: "#fff", padding: "1px 6px", borderRadius: 8 }}>
-                      {t}
-                    </span>
-                  ))}
-                </div>
+              {!loading && query.length < 2 && (
+                <div className="search-results__msg">Начните вводить, чтобы найти статьи</div>
               )}
-            </a>
-          ))}
+              {results.map((r) => (
+                <a key={r.slug} href={`/articles/${r.slug}`} onClick={closeMobile} className="search-result-item">
+                  <div className="search-result-item__title">{r.title}</div>
+                  {r.meta_description && (
+                    <div className="search-result-item__desc">{r.meta_description.slice(0, 100)}...</div>
+                  )}
+                </a>
+              ))}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

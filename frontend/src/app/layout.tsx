@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import SearchBar from "@/components/SearchBar";
 import ScrollToTop from "@/components/ScrollToTop";
+import MobileMenu from "@/components/MobileMenu";
 import type { Metadata } from 'next'
 import './globals.css'
 
@@ -125,21 +126,24 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="header-inner">
             <a href="/" className="header-logo">
               <div className="logo-icon">
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                  <circle cx="16" cy="16" r="16" fill="url(#logoGrad)"/>
-                  <text x="16" y="21" textAnchor="middle" fill="white" fontSize="16" fontWeight="700" fontFamily="Golos Text, sans-serif">М</text>
+                <svg width="32" height="32" viewBox="0 0 80 80" fill="none">
                   <defs>
-                    <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32">
-                      <stop offset="0%" stopColor="#B95EC0"/>
-                      <stop offset="100%" stopColor="#E91E8C"/>
+                    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#E91E8C"/>
+                      <stop offset="100%" stopColor="#7B2FBE"/>
                     </linearGradient>
                   </defs>
+                  <polygon points="40,4 76,40 40,76 4,40" fill="url(#logoGrad)"/>
+                  <polygon points="40,18 62,40 40,62 18,40" fill="white" opacity="0.15"/>
+                  <circle cx="40" cy="40" r="9" fill="white" opacity="0.92"/>
+                  <polygon points="68,6 76,14 68,22 60,14" fill="#F06292" opacity="0.7"/>
                 </svg>
               </div>
-              <span className="logo-text">AI Mama</span>
+              <span className="logo-text">KinDAR: Ai Mama</span>
             </a>
             <span className="header-tagline">Умный журнал для молодых мам</span>
             <SearchBar />
+            <MobileMenu rubrics={sidebarRubrics.map(r => ({ name: r.name, icon: r.icon }))} />
           </div>
         </header>
 
