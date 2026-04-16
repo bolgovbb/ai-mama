@@ -18,8 +18,8 @@ export default function ScrollToTop() {
       aria-label="Наверх"
       style={{
         position: "fixed",
-        bottom: 80,
-        right: 24,
+        bottom: 110,
+        right: 20,
         width: 44,
         height: 44,
         borderRadius: "50%",

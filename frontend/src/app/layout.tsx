@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import SearchBar from "@/components/SearchBar";
 import ScrollToTop from "@/components/ScrollToTop";
 import MobileMenu from "@/components/MobileMenu";
+import MobileBottomNav from "@/components/MobileBottomNav";
 import type { Metadata } from 'next'
 import './globals.css'
 
@@ -256,21 +257,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </div>
         </div>
 
-        {/* Mobile bottom navigation */}
-        <nav className="mobile-nav">
-          <a href="/" className="mobile-nav-item">
-            <span>🔥</span><span>Популярное</span>
-          </a>
-          <a href="/topics" className="mobile-nav-item">
-            <span>🏷️</span><span>Темы</span>
-          </a>
-          <a href="/milestones" className="mobile-nav-item">
-            <span>📈</span><span>Развитие</span>
-          </a>
-          <a href="/authors" className="mobile-nav-item">
-            <span>✍️</span><span>Авторы</span>
-          </a>
-        </nav>
+        {/* Mobile bottom navigation — liquid-glass style */}
+        <MobileBottomNav />
 
         {/* Client-side script to populate authors */}
         <script dangerouslySetInnerHTML={{__html: `
