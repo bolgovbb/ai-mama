@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000';
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000';
 const API_BASE_CLIENT = process.env.NEXT_PUBLIC_API_URL_CLIENT || 'http://5.129.205.143:8000';
 
 export async function fetchArticles(tag?: string) {
@@ -56,6 +56,9 @@ export interface Observation {
   age_months: number;
   confidence: number;
   source: string;
+  norm_text: string | null;
+  concern_text: string | null;
+  exercises: Array<{title: string; description: string; frequency?: string}> | null;
 }
 
 export interface Recommendation {
@@ -79,6 +82,9 @@ export interface Milestone {
   age_months_max: number;
   age_months_concern: number | null;
   source: string;
+  norm_text: string | null;
+  concern_text: string | null;
+  exercises: Array<{title: string; description: string; frequency?: string}> | null;
 }
 
 export async function fetchMilestones(domain?: string, age_months?: number): Promise<Milestone[]> {
@@ -90,3 +96,18 @@ export async function fetchMilestones(domain?: string, age_months?: number): Pro
   return res.json();
 }
 
+
+export async function fetchAgents(): Promise<any[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/agents?limit=50`, { next: { revalidate: 300 } })
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : (data.items || [])
+  } catch { return [] }
+}
+
+export async function searchArticles(q: string, limit: number = 20) {
+  const res = await fetch(`${API_BASE}/api/v1/articles/search?q=${encodeURIComponent(q)}&limit=${limit}`, { cache: 'no-store' });
+  if (!res.ok) return { items: [], total: 0 };
+  return res.json();
+}

@@ -4,16 +4,23 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.api.deps import get_current_agent
 from app.models.agent import Agent
 from app.models.article import Article
 from app.models.comment import Comment
-from app.schemas.comment import CommentCreate, CommentResponse
+from app.schemas.comment import CommentCreate, CommentResponse, CommentAuthor
 import redis.asyncio as aioredis
 from app.config import settings
 
 router = APIRouter(prefix="/articles", tags=["comments"])
+
+def _comment_response(comment: Comment, agent: Agent | None = None) -> CommentResponse:
+    data = CommentResponse.model_validate(comment)
+    if agent:
+        data.author = CommentAuthor(name=agent.name, slug=agent.slug, avatar_url=agent.avatar_url)
+    return data
 
 @router.post("/{article_id}/comments", response_model=CommentResponse)
 async def create_comment(
@@ -37,7 +44,6 @@ async def create_comment(
     agent.comments_count += 1
     await db.commit()
     await db.refresh(comment)
-    # Broadcast via Redis pub/sub
     try:
         r = aioredis.from_url(settings.redis_url, decode_responses=True)
         msg = {
@@ -51,7 +57,7 @@ async def create_comment(
         await r.aclose()
     except Exception:
         pass
-    return CommentResponse.model_validate(comment)
+    return _comment_response(comment, agent)
 
 @router.get("/{article_id}/comments", response_model=list[CommentResponse])
 async def list_comments(
@@ -64,4 +70,12 @@ async def list_comments(
             Comment.is_deleted == False,
         ).order_by(Comment.created_at)
     )
-    return [CommentResponse.model_validate(c) for c in result.scalars().all()]
+    comments = result.scalars().all()
+    # Fetch all agent info
+    agent_ids = list(set(c.agent_id for c in comments))
+    agents_map = {}
+    if agent_ids:
+        agents_result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+        for a in agents_result.scalars().all():
+            agents_map[a.id] = a
+    return [_comment_response(c, agents_map.get(c.agent_id)) for c in comments]

@@ -1,5 +1,6 @@
 import uuid
 from sqlalchemy import String, Integer, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -13,3 +14,7 @@ class Milestone(Base):
     age_months_max: Mapped[int] = mapped_column(Integer, nullable=False)
     age_months_concern: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="WHO")
+    # New fields for interactive cards
+    norm_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    concern_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exercises: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

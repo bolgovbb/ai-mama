@@ -28,7 +28,7 @@ class ChildResponse(BaseModel):
 class ObservationCreate(BaseModel):
     domain: str
     milestone_code: str
-    status: str  # achieved/emerging/not_yet/regression
+    status: str
     observed_at: date
     age_months: int
     notes: Optional[str] = None
@@ -70,12 +70,15 @@ class MilestoneResponse(BaseModel):
     age_months_max: int
     age_months_concern: Optional[int]
     source: str
+    norm_text: Optional[str] = None
+    concern_text: Optional[str] = None
+    exercises: Optional[list[dict]] = None
     class Config:
         from_attributes = True
 
 class MapDomain(BaseModel):
     domain: str
-    score: float  # 0-100
+    score: float
     achieved: int
     expected: int
     red_flags: int
