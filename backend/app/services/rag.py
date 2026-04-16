@@ -1,10 +1,14 @@
-"""Advanced RAG service with self-reflective loop using Anthropic API."""
+"""LLM access layer. Prefers OpenRouter when OPENROUTER_API_KEY is set,
+falls back to Anthropic's native API if ANTHROPIC_API_KEY is present."""
 import json
 import os
 import httpx
 from app.config import settings
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-haiku-4.5")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 async def verify_sources(sources: list) -> dict:
     if not sources:
@@ -13,11 +17,38 @@ async def verify_sources(sources: list) -> dict:
     score = min(1.0, verified / max(len(sources), 1))
     return {"verified": verified, "total": len(sources), "score": score}
 
-async def _call_claude(system: str, user: str, max_tokens: int = 512) -> str:
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or settings.anthropic_api_key
-    if not api_key:
-        return ""
-    async with httpx.AsyncClient(timeout=30) as http:
+
+async def _call_openrouter(system: str, user: str, max_tokens: int, api_key: str) -> str:
+    async with httpx.AsyncClient(timeout=45) as http:
+        resp = await http.post(
+            OPENROUTER_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://mama.kindar.app",
+                "X-Title": "AI Mama (KinDAR)",
+            },
+            json={
+                "model": OPENROUTER_MODEL,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            },
+        )
+        if resp.status_code != 200:
+            print(f"[rag] OpenRouter {resp.status_code}: {resp.text[:200]}")
+            return ""
+        try:
+            return resp.json()["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, ValueError) as e:
+            print(f"[rag] OpenRouter parse error: {e}")
+            return ""
+
+
+async def _call_anthropic_direct(system: str, user: str, max_tokens: int, api_key: str) -> str:
+    async with httpx.AsyncClient(timeout=45) as http:
         resp = await http.post(
             ANTHROPIC_URL,
             headers={
@@ -26,22 +57,50 @@ async def _call_claude(system: str, user: str, max_tokens: int = 512) -> str:
                 "content-type": "application/json",
             },
             json={
-                "model": "claude-haiku-4-5-20251001",
+                "model": ANTHROPIC_MODEL,
                 "max_tokens": max_tokens,
                 "system": system,
                 "messages": [{"role": "user", "content": user}],
-            }
+            },
         )
-        if resp.status_code == 200:
-            return resp.json()["content"][0]["text"]
+        if resp.status_code != 200:
+            print(f"[rag] Anthropic {resp.status_code}: {resp.text[:200]}")
+            return ""
+        try:
+            return resp.json()["content"][0]["text"] or ""
+        except (KeyError, IndexError, ValueError) as e:
+            print(f"[rag] Anthropic parse error: {e}")
+            return ""
+
+
+async def _call_claude(system: str, user: str, max_tokens: int = 512) -> str:
+    """Generate a response via the first configured LLM provider.
+
+    Priority: OpenRouter (OPENROUTER_API_KEY) → Anthropic direct
+    (ANTHROPIC_API_KEY). Returns "" when neither is configured or when
+    the call fails, so callers can keep their existing fallback logic.
+    """
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if openrouter_key:
+        out = await _call_openrouter(system, user, max_tokens, openrouter_key)
+        if out:
+            return out
+        # If OpenRouter fails, fall through to Anthropic if configured
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "") or settings.anthropic_api_key
+    if anthropic_key:
+        return await _call_anthropic_direct(system, user, max_tokens, anthropic_key)
     return ""
 
 async def factcheck_article(title: str, body_md: str, sources: list) -> dict:
     src_check = await verify_sources(sources)
     base_score = 40.0 + src_check["score"] * 40.0
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or settings.anthropic_api_key
-    if not api_key:
+    has_llm = bool(
+        os.environ.get("OPENROUTER_API_KEY", "")
+        or os.environ.get("ANTHROPIC_API_KEY", "")
+        or settings.anthropic_api_key
+    )
+    if not has_llm:
         final_score = min(100.0, base_score + len(sources) * 3)
         return {
             "score": final_score,

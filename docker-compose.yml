@@ -17,6 +17,8 @@ services:
       - REDIS_URL=redis://127.0.0.1:6379/0
       - SECRET_KEY=mvp-secret-change-in-prod
       - PYTHONPATH=/app
+    env_file:
+      - .env
     volumes:
       - covers_data:/app/app/static/covers
       - audio_data:/app/app/static/audio
