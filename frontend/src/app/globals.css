@@ -1916,36 +1916,148 @@ img {
   30% { opacity: 1; transform: translateY(-2px); }
 }
 
-.article-chat__chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 20px 4px;
+/* ==== Кира hints dock (collapsible, kindar.app chat style) ==== */
+.kira-hints {
+  margin: 10px 16px 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #FFF5FB, #F3EAFE);
+  border: 1.5px solid #EDD8F8;
+  transition: background 0.2s;
 }
-.article-chat__chip {
-  background: rgba(168, 85, 247, 0.12);
-  border: 1px solid rgba(168, 85, 247, 0.28);
-  color: rgba(240, 235, 248, 0.85);
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-size: 12.5px;
-  font-weight: 500;
+.kira-hints--collapsed .kira-hints__header {
+  padding-bottom: 12px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.kira-hints__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: default;
   font-family: inherit;
-  white-space: normal;
   text-align: left;
+  color: inherit;
 }
-.article-chat__chip:hover:not(:disabled) {
-  background: rgba(168, 85, 247, 0.22);
-  border-color: rgba(168, 85, 247, 0.45);
+.kira-hints--collapsed .kira-hints__header { cursor: pointer; }
+.kira-hints__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #D63AA0, #7B2FBE);
+  box-shadow: 0 2px 8px rgba(123, 47, 190, 0.25);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
 }
-.article-chat__chip:active:not(:disabled) {
-  transform: scale(0.97);
+.kira-hints__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.article-chat__chip:disabled {
-  opacity: 0.5;
+.kira-hints__title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #D63AA0;
+  line-height: 1.2;
+}
+.kira-hints__subtitle {
+  font-size: 10.5px;
+  color: #A090B8;
+  line-height: 1.3;
+}
+.kira-hints__toggle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #A090B8;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.kira-hints__header:hover .kira-hints__toggle {
+  background: rgba(214, 58, 160, 0.08);
+  color: #D63AA0;
+}
+.kira-hints__body {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kira-hints__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kira-hints__item {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border: 1.5px solid #EDD8E8;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: #1A0E28;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.12s, border-color 0.15s, background 0.15s;
+  white-space: normal;
+  word-break: break-word;
+}
+.kira-hints__item:hover:not(:disabled) {
+  border-color: #D63AA0;
+  background: #FFF5FB;
+}
+.kira-hints__item:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.kira-hints__item:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
+}
+.kira-hints__regen {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(214, 58, 160, 0.1);
+  color: #D63AA0;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+.kira-hints__regen:hover:not(:disabled) {
+  background: rgba(214, 58, 160, 0.2);
+}
+.kira-hints__regen:active:not(:disabled) {
+  transform: scale(0.9);
+}
+.kira-hints__regen:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.kira-hints__regen-icon--spinning {
+  animation: kiraRegenSpin 0.7s linear infinite;
+}
+@keyframes kiraRegenSpin {
+  to { transform: rotate(360deg); }
 }
 
 .article-chat__input-row {
@@ -2007,9 +2119,12 @@ img {
   }
   .article-chat__header { padding: 14px 16px; }
   .article-chat__body { padding: 14px 16px; max-height: 300px; }
-  .article-chat__chips { padding: 8px 16px 4px; }
   .article-chat__input-row { padding: 10px 12px 12px; }
   .article-chat__title { font-size: 13px; }
+  .kira-hints { margin: 8px 12px 0; }
+  .kira-hints__header { padding: 10px 12px 6px; }
+  .kira-hints__body { padding: 0 12px 10px; }
+  .kira-hints__item { padding: 8px 10px; font-size: 12px; }
 }
 
 /* ===== Mobile overflow fixes ===== */

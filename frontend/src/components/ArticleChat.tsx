@@ -13,6 +13,8 @@ interface Props {
   slug: string;
 }
 
+const VISIBLE_SUGGESTIONS = 3;
+
 function KiraOrb({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 80 80" aria-hidden="true">
@@ -38,12 +40,17 @@ function TypingDots() {
 }
 
 export default function ArticleChat({ slug }: Props) {
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [pool, setPool] = useState<string[]>([]); // full list of 5 from API
+  const [shown, setShown] = useState<string[]>([]); // 3 currently visible
+  const [collapsed, setCollapsed] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [regenIdx, setRegenIdx] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Fetch suggestions once on mount
   useEffect(() => {
@@ -51,7 +58,10 @@ export default function ArticleChat({ slug }: Props) {
     fetch(`/api/v1/articles/${slug}/suggestions`)
       .then((r) => (r.ok ? r.json() : { questions: [] }))
       .then((d) => {
-        if (!cancelled) setSuggestions((d?.questions || []).slice(0, 5));
+        if (cancelled) return;
+        const qs: string[] = (d?.questions || []).slice(0, 5);
+        setPool(qs);
+        setShown(qs.slice(0, VISIBLE_SUGGESTIONS));
       })
       .catch(() => {});
     return () => {
@@ -67,9 +77,41 @@ export default function ArticleChat({ slug }: Props) {
     });
   }, [messages, loading]);
 
+  const collapseIfFirstInteraction = () => {
+    if (!hasInteracted) {
+      setHasInteracted(true);
+      setCollapsed(true);
+    }
+  };
+
+  const handleChipClick = (text: string) => {
+    setInput(text);
+    collapseIfFirstInteraction();
+    // Focus after a tick so the user can edit or press Enter
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleRegenerate = (idx: number) => {
+    if (regenIdx !== null) return;
+    // Swap this slot with an unused question from the pool
+    const unused = pool.filter((q) => !shown.includes(q));
+    if (unused.length === 0) return;
+    setRegenIdx(idx);
+    setTimeout(() => {
+      setShown((prev) => {
+        const next = [...prev];
+        const pick = unused[Math.floor(Math.random() * unused.length)];
+        next[idx] = pick;
+        return next;
+      });
+      setRegenIdx(null);
+    }, 280);
+  };
+
   const send = async (text: string) => {
     const question = text.trim();
     if (!question || loading) return;
+    collapseIfFirstInteraction();
     const userMsg: Message = {
       id: `u-${Date.now()}`,
       role: "user",
@@ -104,6 +146,9 @@ export default function ArticleChat({ slug }: Props) {
       setLoading(false);
     }
   };
+
+  const hasSuggestions = shown.length > 0;
+  const canRegenerate = pool.length > shown.length;
 
   return (
     <section className="article-chat">
@@ -165,26 +210,90 @@ export default function ArticleChat({ slug }: Props) {
         )}
       </div>
 
-      {/* Suggestion chips */}
-      {suggestions.length > 0 && (
-        <div className="article-chat__chips">
-          {suggestions.map((q) => (
-            <button
-              key={q}
-              type="button"
-              className="article-chat__chip"
-              onClick={() => send(q)}
-              disabled={loading}
-            >
-              {q}
-            </button>
-          ))}
+      {/* Suggestions dock — collapsible */}
+      {hasSuggestions && (
+        <div
+          className={`kira-hints${collapsed ? " kira-hints--collapsed" : ""}`}
+        >
+          <button
+            type="button"
+            className="kira-hints__header"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+          >
+            <span className="kira-hints__avatar">✨</span>
+            <span className="kira-hints__meta">
+              <span className="kira-hints__title">
+                {collapsed ? "Кира AI — готова помочь" : "Кира AI — подсказывает:"}
+              </span>
+              <span className="kira-hints__subtitle">
+                {collapsed
+                  ? "Посмотри, какие варианты вопросов есть"
+                  : "Нажми, чтобы вставить в поле ввода"}
+              </span>
+            </span>
+            <span className="kira-hints__toggle" aria-hidden="true">
+              {collapsed ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M6 6 L18 18 M18 6 L6 18" />
+                </svg>
+              )}
+            </span>
+          </button>
+
+          {!collapsed && (
+            <div className="kira-hints__body">
+              {shown.map((q, i) => (
+                <div key={`${q}-${i}`} className="kira-hints__row">
+                  <button
+                    type="button"
+                    className="kira-hints__item"
+                    onClick={() => handleChipClick(q)}
+                    disabled={loading}
+                  >
+                    {q}
+                  </button>
+                  {canRegenerate && (
+                    <button
+                      type="button"
+                      className="kira-hints__regen"
+                      onClick={() => handleRegenerate(i)}
+                      aria-label="Другой вариант"
+                      disabled={regenIdx !== null}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={regenIdx === i ? "kira-hints__regen-icon--spinning" : ""}
+                      >
+                        <path d="M21 2v6h-6" />
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                        <path d="M3 22v-6h6" />
+                        <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* Input */}
       <div className="article-chat__input-row">
         <input
+          ref={inputRef}
           type="text"
           className="article-chat__input"
           value={input}
