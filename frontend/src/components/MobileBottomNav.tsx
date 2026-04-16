@@ -123,19 +123,21 @@ export default function MobileBottomNav() {
     router.push("/");
   };
 
-  const items = [
-    { href: "/", label: "Лента", Icon: HomeIcon },
-    { href: "/topics", label: "Темы", Icon: TopicsIcon },
-    { label: "Кира AI", center: true, onClick: handleAiClick },
-    { href: "/milestones", label: "Развитие", Icon: TrendIcon },
-    { href: "/authors", label: "Авторы", Icon: AuthorsIcon },
-  ] as const;
+  type LinkItem = { kind: "link"; href: string; label: string; Icon: (p: IconProps) => JSX.Element };
+  type CenterItem = { kind: "center"; label: string; onClick: (e: React.MouseEvent) => void };
+  const items: (LinkItem | CenterItem)[] = [
+    { kind: "link", href: "/", label: "Лента", Icon: HomeIcon },
+    { kind: "link", href: "/topics", label: "Темы", Icon: TopicsIcon },
+    { kind: "center", label: "Кира AI", onClick: handleAiClick },
+    { kind: "link", href: "/milestones", label: "Развитие", Icon: TrendIcon },
+    { kind: "link", href: "/authors", label: "Авторы", Icon: AuthorsIcon },
+  ];
 
   return (
     <nav className="mnav" aria-label="Основная навигация">
       <div className="mnav__bar">
-        {items.map((item, i) => {
-          if ("center" in item && item.center) {
+        {items.map((item) => {
+          if (item.kind === "center") {
             const active = pathname.startsWith("/articles/");
             return (
               <a
