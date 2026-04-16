@@ -124,7 +124,7 @@ export default function ArticleFeed({ articles }: { articles: Article[] }) {
     <div>
       {/* ===== Compact headlines block (vc.ru style) ===== */}
       <div className="headlines-block">
-        <DateFilter onChange={setPeriod} initialPeriod={period} />
+        <DateFilter onChange={setPeriod} value={period} />
         {filtered.length === 0 ? (
           <div style={{padding:'20px 0',color:'var(--color-text-secondary)',fontSize:14}}>
             Статей за этот период пока нет

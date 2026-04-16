@@ -22,9 +22,18 @@ export function getPeriodDate(key: string): Date | null {
   }
 }
 
-export default function DateFilter({ onChange, initialPeriod = "today" }: { onChange: (key: string) => void; initialPeriod?: string }) {
+export default function DateFilter({
+  onChange,
+  value,
+  initialPeriod = "today",
+}: {
+  onChange: (key: string) => void;
+  value?: string;
+  initialPeriod?: string;
+}) {
   const [open, setOpen] = useState(false)
-  const [selected, setSelected] = useState(initialPeriod)
+  const [internal, setInternal] = useState(initialPeriod)
+  const selected = value !== undefined ? value : internal
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -55,7 +64,7 @@ export default function DateFilter({ onChange, initialPeriod = "today" }: { onCh
           border: "1px solid var(--color-border)", padding: "6px 0", minWidth: 160,
         }}>
           {PERIODS.map(p => (
-            <button key={p.key} onClick={() => { setSelected(p.key); setOpen(false); onChange(p.key) }} style={{
+            <button key={p.key} onClick={() => { setInternal(p.key); setOpen(false); onChange(p.key) }} style={{
               display: "block", width: "100%", textAlign: "left", padding: "8px 16px",
               background: p.key === selected ? "var(--color-primary-light)" : "none",
               border: "none", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
