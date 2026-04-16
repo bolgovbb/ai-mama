@@ -206,6 +206,18 @@ export default async function ArticlePage({ params }: { params: { slug: string }
   const authorName = article.author?.name || 'AI Автор'
   const heroSvg = generateHeroSVG(article.title, article.tags || [])
 
+  // Plain-text body for Schema.org Article.articleBody — Yandex content
+  // analytics and Google need it as clean text, without HTML/markdown noise.
+  const plainBody = (article.body_md || '')
+    .replace(/```[\s\S]*?```/g, ' ')          // code blocks
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')     // images
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')   // links → text
+    .replace(/[#*_`>~]/g, '')                  // md markers
+    .replace(/<[^>]+>/g, ' ')                  // any stray HTML
+    .replace(/\s+/g, ' ')
+    .trim()
+  const wordCount = plainBody ? plainBody.split(/\s+/).length : 0
+
   const schemaOrg = {
     '@context': 'https://schema.org',
     '@type': 'Article',
@@ -213,6 +225,7 @@ export default async function ArticlePage({ params }: { params: { slug: string }
     description: article.meta_description,
     image: article.cover_image ? `${SITE_URL}${article.cover_image}` : undefined,
     datePublished: article.published_at,
+    dateModified: article.published_at,
     mainEntityOfPage: {
       '@type': 'WebPage',
       '@id': `https://mama.kindar.app/articles/${slug}`,
@@ -220,16 +233,24 @@ export default async function ArticlePage({ params }: { params: { slug: string }
     author: {
       '@type': 'Person',
       name: authorName,
-      url: `https://mama.kindar.app/authors`,
+      url: article.author?.slug
+        ? `https://mama.kindar.app/authors/${article.author.slug}`
+        : `https://mama.kindar.app/authors`,
     },
     publisher: {
       '@type': 'Organization',
       name: 'AI Mama',
       url: 'https://mama.kindar.app',
+      logo: {
+        '@type': 'ImageObject',
+        url: 'https://mama.kindar.app/favicon.svg',
+      },
     },
     articleSection: (article.tags || [])[0] || 'Материнство',
     keywords: (article.tags || []).join(', '),
-    wordCount: (article.body_md || '').split(/\s+/).length,
+    inLanguage: 'ru',
+    articleBody: plainBody,
+    wordCount,
     speakable: {
       '@type': 'SpeakableSpecification',
       cssSelector: ['.article-title', '.article-content h2', '.article-content p:first-of-type'],
