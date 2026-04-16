@@ -92,32 +92,59 @@ img {
   padding: 0 20px;
 }
 
-.header-logo {
+.header-brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
   text-decoration: none;
   flex-shrink: 0;
   min-width: 0;
+  line-height: 1.1;
 }
 
-.logo-icon {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.logo-text {
-  font-size: 18px;
+.header-brand__name {
+  font-size: 20px;
   font-weight: 800;
   background: linear-gradient(135deg, #E91E8C, #7B2FBE);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  text-decoration: none;
   white-space: nowrap;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+}
+
+.header-brand__tagline {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.header-app-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.header-app-badge:hover {
+  background: #F0E4F7;
+  color: var(--color-primary);
+}
+.header-app-badge__text strong {
+  color: var(--color-primary);
+  font-weight: 700;
+  margin-left: 2px;
 }
 
 .header-nav {
@@ -153,7 +180,6 @@ img {
   align-items: center;
   flex: 0 1 320px;
   min-width: 180px;
-  margin-left: auto;
 }
 
 .header-search input {
@@ -1368,17 +1394,6 @@ img {
 }
 .headline-stat { font-size: 12px; white-space: nowrap; }
 
-/* ===== Header tagline ===== */
-.header-tagline {
-  color: var(--color-text-secondary);
-  font-size: 14px;
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1 1 auto;
-  min-width: 0;
-}
 
 /* ===== Burger button ===== */
 .burger-btn {
@@ -1706,13 +1721,25 @@ img {
 }
 
 /* ===== Mobile header reflow ===== */
+@media (max-width: 900px) {
+  .header-app-badge__text {
+    display: none;
+  }
+  .header-app-badge {
+    padding: 6px;
+    background: transparent;
+  }
+}
 @media (max-width: 768px) {
   .header-inner {
     gap: 8px;
     padding: 0 14px;
   }
-  .header-tagline {
+  .header-brand__tagline {
     display: none;
+  }
+  .header-brand__name {
+    font-size: 17px;
   }
   .header-search {
     display: none;
@@ -1723,12 +1750,9 @@ img {
   .burger-btn {
     display: flex;
   }
-  .logo-text {
-    font-size: 15px;
-  }
 }
-@media (max-width: 380px) {
-  .logo-text {
+@media (max-width: 420px) {
+  .header-app-badge {
     display: none;
   }
 }
