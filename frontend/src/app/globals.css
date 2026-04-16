@@ -1731,29 +1731,63 @@ img {
   }
 }
 @media (max-width: 768px) {
+  .site-header {
+    height: auto;
+    min-height: 56px;
+  }
   .header-inner {
     gap: 8px;
-    padding: 0 14px;
+    padding: 8px 14px;
   }
-  .header-brand__tagline {
-    display: none;
+  .header-brand {
+    flex: 1;
+    min-width: 0;
   }
   .header-brand__name {
     font-size: 17px;
+  }
+  .header-brand__tagline {
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
   .header-search {
     display: none;
   }
   .search-trigger-mobile {
     display: inline-flex;
+    width: 36px;
+    height: 36px;
   }
   .burger-btn {
     display: flex;
+    width: 36px;
+    height: 36px;
+  }
+  .header-app-badge {
+    margin-left: 0;
+    padding: 8px;
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+  }
+  .header-app-badge svg {
+    width: 24px;
+    height: 24px;
   }
 }
-@media (max-width: 420px) {
-  .header-app-badge {
+/* Ultra-narrow screens: drop search icon to keep layout readable */
+@media (max-width: 360px) {
+  .search-trigger-mobile {
     display: none;
+  }
+  .header-inner {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .header-brand__tagline {
+    font-size: 10.5px;
   }
 }
 
