@@ -1,10 +1,13 @@
 export const dynamic = "force-dynamic";
+import Script from "next/script";
 import SearchBar from "@/components/SearchBar";
 import ScrollToTop from "@/components/ScrollToTop";
 import MobileMenu from "@/components/MobileMenu";
 import MobileBottomNav from "@/components/MobileBottomNav";
 import type { Metadata } from 'next'
 import './globals.css'
+
+const YM_COUNTER_ID = 108583362;
 
 const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
@@ -120,8 +123,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             }
           })}}
         />
+        {/* Yandex.Metrika counter */}
+        <Script id="yandex-metrika" strategy="afterInteractive">
+          {`(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YM_COUNTER_ID}', 'ym');ym(${YM_COUNTER_ID}, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", accurateTrackBounce:true, trackLinks:true});`}
+        </Script>
       </head>
       <body>
+        {/* Yandex.Metrika noscript fallback */}
+        <noscript>
+          <div>
+            <img
+              src={`https://mc.yandex.ru/watch/${YM_COUNTER_ID}`}
+              style={{ position: "absolute", left: "-9999px" }}
+              alt=""
+            />
+          </div>
+        </noscript>
         {/* Header */}
         <header className="site-header">
           <div className="header-inner">
