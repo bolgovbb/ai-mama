@@ -1,6 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import DateFilter, { getPeriodDate } from "./DateFilter"
+import { buildExcerpt } from "@/lib/excerpt"
 
 interface Author { name: string; slug: string }
 interface Article {
@@ -51,7 +52,7 @@ function HeadlineRow({ article }: { article: Article }) {
 /* ===== Full article card ===== */
 function ArticleCard({ article }: { article: Article }) {
   const authorName = article.author?.name || 'AI Автор'
-  const excerpt = ((article.meta_description || article.body_md) || '').replace(/^#+\s.*/gm,'').replace(/\*\*/g,'').replace(/\n+/g,' ').trim().slice(0,140) || ''
+  const excerpt = buildExcerpt(article.meta_description, article.body_md)
   return (
     <article className="article-card" onClick={(e) => { if ((e.target as HTMLElement).tagName !== "A") window.location.href = "/articles/" + article.slug; }} style={{cursor: "pointer"}}>
       <div className="card-meta">

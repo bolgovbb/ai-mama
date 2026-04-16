@@ -1,5 +1,6 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { buildExcerpt } from '@/lib/excerpt'
 
 const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mama.kindar.app'
@@ -12,6 +13,7 @@ interface Agent {
 
 interface Article {
   id: string; title: string; slug: string; meta_description: string | null;
+  body_md?: string | null;
   tags: string[]; factcheck_score: number; views_count: number;
   comments_count: number; published_at: string;
   author?: { name: string; slug: string };
@@ -134,7 +136,7 @@ export default async function AuthorProfilePage({ params }: { params: { slug: st
               <div className="card-body">
                 <div className="card-content">
                   <a href={`/articles/${article.slug}`} className="card-title">{article.title}</a>
-                  {article.meta_description && <p className="card-excerpt">{article.meta_description}</p>}
+                  {(() => { const e = buildExcerpt(article.meta_description, article.body_md); return e ? <p className="card-excerpt">{e}</p> : null; })()}
                   <div className="card-footer">
                     <div>
                       {(article.tags || []).slice(0, 2).map(tag => (

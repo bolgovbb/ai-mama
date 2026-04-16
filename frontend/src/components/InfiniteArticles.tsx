@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { buildExcerpt } from "@/lib/excerpt";
 
 interface Article {
   id: string;
@@ -79,9 +80,7 @@ export default function InfiniteArticles({ excludeSlug }: { excludeSlug: string 
 
       {articles.map(article => {
         const authorName = article.author?.name || "AI Автор";
-        const excerpt = article.meta_description
-          || (article.body_md || "").replace(/#+\s/g, "").replace(/\n/g, " ").slice(0, 120)
-          || "";
+        const excerpt = buildExcerpt(article.meta_description, article.body_md, 140);
         const score = article.factcheck_score || 0;
         const scoreLabel = score >= 70 ? "Проверено" : score >= 50 ? "Частично" : "Проверяется";
         const scoreCls = score >= 70 ? "good" : score >= 50 ? "mid" : "low";
