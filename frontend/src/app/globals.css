@@ -2113,6 +2113,22 @@ img {
   border-color: rgba(255, 90, 90, 0.3);
   color: rgba(255, 180, 180, 0.9);
 }
+.article-chat__bubble strong {
+  color: #F9D9EC;
+  font-weight: 700;
+}
+.kira-msg-link {
+  color: #FDA4D1;
+  text-decoration: underline;
+  text-decoration-color: rgba(253, 164, 209, 0.5);
+  text-underline-offset: 2px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+  word-break: break-word;
+}
+.kira-msg-link:hover {
+  color: #FFC1DF;
+  text-decoration-color: #FFC1DF;
+}
 
 .kira-typing {
   display: inline-flex;

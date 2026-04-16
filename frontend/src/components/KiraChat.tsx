@@ -46,6 +46,42 @@ function TypingDots() {
   );
 }
 
+/** Inline renderer for Кира's answers.
+ *  Handles [text](url) links and **bold** markers. Newlines are preserved
+ *  by the container's `white-space: pre-wrap`. Deliberately minimal — no
+ *  external deps, no raw HTML injection. */
+function renderRich(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let rest = text;
+  let key = 0;
+  const re = /(\*\*([^*\n]+)\*\*)|(\[([^\]\n]+)\]\(([^)\s]+)\))/;
+  while (true) {
+    const m = rest.match(re);
+    if (!m || m.index === undefined) break;
+    if (m.index > 0) parts.push(rest.slice(0, m.index));
+    if (m[1]) {
+      parts.push(<strong key={`b-${key++}`}>{m[2]}</strong>);
+    } else if (m[3]) {
+      const url = m[5];
+      const external = /^https?:\/\//i.test(url);
+      parts.push(
+        <a
+          key={`l-${key++}`}
+          href={url}
+          className="kira-msg-link"
+          target={external ? "_blank" : undefined}
+          rel={external ? "noopener noreferrer" : undefined}
+        >
+          {m[4]}
+        </a>,
+      );
+    }
+    rest = rest.slice(m.index + m[0].length);
+  }
+  if (rest) parts.push(rest);
+  return parts.length > 0 ? parts : text;
+}
+
 export default function KiraChat({
   suggestionsUrl,
   askUrl,
@@ -201,7 +237,7 @@ export default function KiraChat({
             <div
               className={`article-chat__bubble article-chat__bubble--${m.role}${m.error ? " article-chat__bubble--error" : ""}`}
             >
-              {m.text}
+              {m.role === "assistant" ? renderRich(m.text) : m.text}
             </div>
           </div>
         ))}
