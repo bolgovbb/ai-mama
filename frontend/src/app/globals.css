@@ -407,7 +407,7 @@ img {
 .card-body {
   display: flex;
   gap: 16px;
-
+  align-items: stretch;
 }
 
 .card-content {
@@ -442,9 +442,10 @@ img {
 }
 
 .card-cover-wrap {
-  width: 120px;
-  height: 80px;
-  border-radius: 8px;
+  width: 160px;
+  min-height: 100%;
+  align-self: stretch;
+  border-radius: 12px;
   flex-shrink: 0;
   overflow: hidden;
   background: var(--color-primary-light);
@@ -1157,8 +1158,8 @@ img {
     height: 200px;
   }
   .card-cover-wrap {
-    width: 80px;
-    height: 60px;
+    width: 120px;
+    min-height: 100%;
   }
   .card-title {
     font-size: 15px;
