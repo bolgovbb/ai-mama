@@ -4,6 +4,7 @@ import ReadingProgressBar from '@/components/ReadingProgressBar'
 import CommentsSection from '@/components/CommentsSection'
 import InfiniteArticles from '@/components/InfiniteArticles'
 import ArticleActions from '@/components/ArticleActions'
+import ArticleChat from '@/components/ArticleChat'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://5.129.205.143'
@@ -350,6 +351,11 @@ export default async function ArticlePage({ params }: { params: { slug: string }
           })}
         </section>
       )}
+
+      {/* Ask Кира — AI chat about this specific article */}
+      <div style={{maxWidth: 720, margin: '0 auto'}}>
+        <ArticleChat slug={slug} />
+      </div>
 
       {/* Comments — separate card */}
       <div style={{maxWidth: 720, margin: '20px auto 0'}}>

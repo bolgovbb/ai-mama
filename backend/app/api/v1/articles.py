@@ -14,10 +14,11 @@ from app.api.deps import get_current_agent
 from app.models.agent import Agent
 from app.models.article import Article
 from app.schemas.article import ArticleCreate, ArticleUpdate, ArticleResponse, ArticleList, AuthorProfile
-from app.services.rag import factcheck_article
+from app.services.rag import factcheck_article, _call_claude
 from app.services.cover_image import generate_cover_svg
 import redis.asyncio as aioredis
 from app.config import settings
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -402,3 +403,145 @@ async def list_articles(
         count_q = count_q.where(Article.tags.contains([tag]))
     total = (await db.execute(count_q)).scalar()
     return ArticleList(items=[_article_response(a) for a in articles], total=total)
+
+
+# ─────────────────────────────────────────────
+# Кира AI — Ask-about-this-article chat
+# ─────────────────────────────────────────────
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=2, max_length=500)
+
+
+class AskResponse(BaseModel):
+    answer: str
+
+
+class SuggestionsResponse(BaseModel):
+    questions: list[str]
+
+
+KIRA_SYSTEM = (
+    "Ты — Кира, AI-помощник журнала AI Mama (часть платформы KinDAR). "
+    "Отвечаешь молодым мамам на вопросы ПО КОНКРЕТНОЙ СТАТЬЕ. "
+    "Правила:\n"
+    "— Отвечай ТОЛЬКО на основе текста статьи, который тебе передан. "
+    "Если ответа в статье нет — честно скажи «В этой статье об этом не говорится» "
+    "и коротко предложи обратиться к врачу или посмотреть источники в конце статьи.\n"
+    "— Тон: тёплый, уважительный, без медицинских советов. "
+    "НИКОГДА не назначай дозировки, лечение или диагнозы.\n"
+    "— Длина ответа: 2–5 коротких предложений. По-русски.\n"
+    "— Не придумывай факты. Не ссылайся на источники, которых нет в статье."
+)
+
+
+def _truncate_article_context(body_md: str, limit: int = 8000) -> str:
+    """Trim body to fit the model context budget comfortably."""
+    text = (body_md or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n\n[…текст статьи сокращён…]"
+
+
+@router.get("/{slug}/suggestions", response_model=SuggestionsResponse)
+async def article_suggestions(slug: str, db: AsyncSession = Depends(get_db)):
+    """Return up to 5 suggested questions a reader might ask about this article.
+
+    Cached in Redis for 7 days per slug.
+    """
+    cache_key = f"article:suggestions:{slug}"
+    try:
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        cached = await r.get(cache_key)
+        await r.aclose()
+        if cached:
+            return SuggestionsResponse(questions=json.loads(cached))
+    except Exception:
+        pass
+
+    result = await db.execute(select(Article).where(Article.slug == slug))
+    article = result.scalar_one_or_none()
+    if not article or article.status != "published":
+        raise HTTPException(404, "Article not found")
+
+    system = (
+        "Ты формулируешь вопросы, которые читатель-мама мог бы задать по статье. "
+        "Верни СТРОГО JSON-массив из 5 коротких вопросов на русском, "
+        "каждый вопрос не длиннее 60 символов, без нумерации и без кавычек-ёлочек. "
+        "Пример ответа: [\"Что такое …?\", \"Когда обращаться к врачу?\", …]. "
+        "Только JSON, ничего больше."
+    )
+    user = f"Заголовок: {article.title}\n\nТекст статьи:\n{_truncate_article_context(article.body_md, 6000)}"
+
+    raw = await _call_claude(system, user, max_tokens=400)
+    questions: list[str] = []
+    if raw:
+        # Robust JSON extraction — sometimes the model wraps in ```json
+        m = re.search(r"\[[^\[\]]*\]", raw, re.DOTALL)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+                if isinstance(parsed, list):
+                    questions = [str(q).strip() for q in parsed if isinstance(q, (str, int, float))]
+            except json.JSONDecodeError:
+                pass
+
+    # Sanity: trim + dedupe, cap at 5
+    seen = set()
+    clean: list[str] = []
+    for q in questions:
+        q = q.strip().strip('"«»').strip()
+        if not q or len(q) > 120 or q in seen:
+            continue
+        if not q.endswith("?"):
+            q = q.rstrip(".!") + "?"
+        seen.add(q)
+        clean.append(q)
+        if len(clean) >= 5:
+            break
+
+    if not clean:
+        # Safe generic fallback so the widget never looks empty
+        clean = [
+            "Что самое важное в этой статье?",
+            "Когда стоит обратиться к врачу?",
+            "На каких источниках это основано?",
+        ]
+
+    try:
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await r.setex(cache_key, 7 * 24 * 3600, json.dumps(clean, ensure_ascii=False))
+        await r.aclose()
+    except Exception:
+        pass
+
+    return SuggestionsResponse(questions=clean)
+
+
+@router.post("/{slug}/ask", response_model=AskResponse)
+async def ask_about_article(
+    slug: str,
+    body: AskRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Answer a reader's question using only the article's content as context."""
+    result = await db.execute(select(Article).where(Article.slug == slug))
+    article = result.scalar_one_or_none()
+    if not article or article.status != "published":
+        raise HTTPException(404, "Article not found")
+
+    question = body.question.strip()
+    user = (
+        f"СТАТЬЯ «{article.title}»:\n\n"
+        f"{_truncate_article_context(article.body_md, 8000)}\n\n"
+        f"---\n\nВОПРОС ЧИТАТЕЛЯ: {question}"
+    )
+
+    answer = await _call_claude(KIRA_SYSTEM, user, max_tokens=400)
+    answer = (answer or "").strip()
+    if not answer:
+        answer = (
+            "Сейчас не получилось ответить — попробуй задать вопрос чуть позже "
+            "или иначе. 🌸"
+        )
+    return AskResponse(answer=answer)
