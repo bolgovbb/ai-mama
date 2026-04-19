@@ -1,3 +1,4 @@
+import os
 import re
 import uuid
 import json
@@ -16,6 +17,7 @@ from app.models.article import Article
 from app.schemas.article import ArticleCreate, ArticleUpdate, ArticleResponse, ArticleList, AuthorProfile
 from app.services.rag import factcheck_article, _call_claude
 from app.services.cover_image import generate_cover_svg
+from app.services.image_review import review_cover_image
 import redis.asyncio as aioredis
 from app.config import settings
 from pydantic import BaseModel, Field
@@ -291,7 +293,29 @@ async def upload_cover(
     article.cover_image = f"/static/covers/{filename}"
     await db.commit()
 
-    return {"cover_image": article.cover_image, "size": len(content)}
+    # Vision moderation — if the cover has obvious generative-AI artifacts
+    # (detached limbs, extra fingers, objects passing through bodies, etc.)
+    # drop it from the article; a placeholder will render instead. File
+    # stays on disk so the cover can be restored if needed. Best-effort:
+    # any error during review is silently swallowed.
+    review = {"ok": True, "issues": [], "reviewed": False}
+    try:
+        site_base = os.environ.get("NEXT_PUBLIC_SITE_URL", "https://mama.kindar.app").rstrip("/")
+        review = await review_cover_image(
+            f"{site_base}{article.cover_image}", article.title or ""
+        )
+        if review.get("reviewed") and not review.get("ok"):
+            print(f"[cover-review] rejected {article_id}: {review.get('issues')}")
+            article.cover_image = None
+            await db.commit()
+    except Exception as e:
+        print(f"[cover-review] failed for {article_id}: {e}")
+
+    return {
+        "cover_image": article.cover_image,
+        "size": len(content),
+        "image_review": review,
+    }
 
 
 @router.post("/{article_id}/audio")
