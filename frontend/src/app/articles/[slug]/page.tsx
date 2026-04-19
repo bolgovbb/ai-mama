@@ -218,7 +218,7 @@ export default async function ArticlePage({ params }: { params: { slug: string }
   // heading prefix stripped. Capped at ~320 chars so it reads as 2–3
   // sentences. LLM answer engines preferentially lift content from
   // visible summary blocks like this one.
-  function buildTldr(): string | null {
+  const tldr: string | null = (() => {
     const clean = (s: string) =>
       s
         .replace(/\*\*/g, '')
@@ -237,9 +237,8 @@ export default async function ArticlePage({ params }: { params: { slug: string }
     if (cleaned.length <= 320) return cleaned
     const cut = cleaned.slice(0, 320)
     const lastPunct = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
-    return (lastPunct > 180 ? cut.slice(0, lastPunct + 1) : cut.trimEnd() + '…')
-  }
-  const tldr = buildTldr()
+    return lastPunct > 180 ? cut.slice(0, lastPunct + 1) : cut.trimEnd() + '…'
+  })()
 
   // Plain-text body for Schema.org Article.articleBody — Yandex content
   // analytics and Google need it as clean text, without HTML/markdown noise.
