@@ -1,6 +1,14 @@
 import os
 import asyncio
+import mimetypes
 from pathlib import Path
+
+# Register mime types that Python's default registry misses so
+# StaticFiles serves the right Content-Type (Google/Yandex image
+# crawlers and our own image-review step both rely on this).
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("image/avif", ".avif")
+mimetypes.add_type("image/svg+xml", ".svg")
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
