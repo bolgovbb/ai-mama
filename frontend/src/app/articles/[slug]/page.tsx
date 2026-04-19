@@ -202,9 +202,44 @@ export default async function ArticlePage({ params }: { params: { slug: string }
     /<a\s+href="(https?:\/\/(?!mama\.kindar\.app)[^"]+)"/gi,
     '<a href="$1" target="_blank" rel="noopener noreferrer"'
   )
-  const bodyWithIds = injectHeadingIds(bodyExtLinks)
+  // Fill empty / missing alt attributes on in-body images with the article title
+  // so screen readers + search engines have something meaningful to show.
+  const escapedTitle = (article.title || '').replace(/"/g, '&quot;')
+  const bodyWithAlt = bodyExtLinks
+    .replace(/<img(?![^>]*\salt=)([^>]*?)>/gi, `<img alt="${escapedTitle}"$1>`)
+    .replace(/<img([^>]*?)\salt=""([^>]*?)>/gi, `<img$1 alt="${escapedTitle}"$2>`)
+  const bodyWithIds = injectHeadingIds(bodyWithAlt)
   const authorName = article.author?.name || 'AI Автор'
   const heroSvg = generateHeroSVG(article.title, article.tags || [])
+
+  // TL;DR — a short summary surfaced above the body. Primary source is
+  // meta_description (already cleaned in the DB); if that's missing or
+  // too short, fall back to the first paragraph of body_md with any
+  // heading prefix stripped. Capped at ~320 chars so it reads as 2–3
+  // sentences. LLM answer engines preferentially lift content from
+  // visible summary blocks like this one.
+  function buildTldr(): string | null {
+    const clean = (s: string) =>
+      s
+        .replace(/\*\*/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/[*_`>]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    let src = (article.meta_description || '').trim()
+    src = src.replace(/^\s*#+\s+[^\n]*(\n+|$)/, '').trim()
+    if (src.length < 80) {
+      const body = (article.body_md || '').replace(/^\s*#+\s+[^\n]*\n+/gm, '').trim()
+      src = body.split(/\n\s*\n/)[0] || ''
+    }
+    const cleaned = clean(src)
+    if (cleaned.length < 60) return null
+    if (cleaned.length <= 320) return cleaned
+    const cut = cleaned.slice(0, 320)
+    const lastPunct = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+    return (lastPunct > 180 ? cut.slice(0, lastPunct + 1) : cut.trimEnd() + '…')
+  }
+  const tldr = buildTldr()
 
   // Plain-text body for Schema.org Article.articleBody — Yandex content
   // analytics and Google need it as clean text, without HTML/markdown noise.
@@ -252,7 +287,8 @@ export default async function ArticlePage({ params }: { params: { slug: string }
     // — Google applies E-E-A-T weights to this type specifically.
     '@type': ['Article', 'MedicalWebPage'],
     headline: article.title,
-    description: article.meta_description,
+    description: tldr || article.meta_description,
+    abstract: tldr || undefined,
     image: article.cover_image ? `${SITE_URL}${article.cover_image}` : undefined,
     datePublished: article.published_at,
     dateModified: article.published_at,
@@ -394,6 +430,16 @@ export default async function ArticlePage({ params }: { params: { slug: string }
           <span>{new Date(article.published_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
         )}
       </div>
+
+      {/* TL;DR — short summary for quick readers and LLM answer engines */}
+      {tldr && (
+        <aside className="article-tldr" aria-label="Коротко о статье">
+          <div className="article-tldr__label">
+            <span aria-hidden="true">💡</span> Коротко
+          </div>
+          <p className="article-tldr__text">{tldr}</p>
+        </aside>
+      )}
 
       {/* Article content */}
       <article
