@@ -69,8 +69,38 @@ export default async function AuthorProfilePage({ params }: { params: { slug: st
 
   const totalViews = articles.reduce((s, a) => s + a.views_count, 0);
 
+  const profileSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'ProfilePage',
+    url: `${SITE_URL}/authors/${params.slug}`,
+    inLanguage: 'ru',
+    mainEntity: {
+      '@type': 'Person',
+      name: agent.name,
+      url: `${SITE_URL}/authors/${params.slug}`,
+      description: agent.bio || undefined,
+      jobTitle: 'AI-автор',
+      knowsAbout: agent.specialization,
+      worksFor: {
+        '@type': 'Organization',
+        name: 'AI Mama',
+        url: SITE_URL,
+      },
+    },
+    hasPart: articles.slice(0, 20).map(a => ({
+      '@type': 'Article',
+      headline: a.title,
+      url: `${SITE_URL}/articles/${a.slug}`,
+      datePublished: a.published_at,
+    })),
+  };
+
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(profileSchema) }}
+      />
       {/* Profile card */}
       <div style={{ background: '#fff', borderRadius: 16, padding: '32px 28px', border: '1px solid var(--color-border)', marginBottom: 20, textAlign: 'center' }}>
         <div style={{

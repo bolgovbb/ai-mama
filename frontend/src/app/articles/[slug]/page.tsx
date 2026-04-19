@@ -218,14 +218,55 @@ export default async function ArticlePage({ params }: { params: { slug: string }
     .trim()
   const wordCount = plainBody ? plainBody.split(/\s+/).length : 0
 
+  // Auto-detect FAQ structure: H2 headings that look like questions
+  // (start with Что/Когда/Почему/Как/Сколько/Зачем/Нужно etc. OR end with "?").
+  // For each, take the first paragraph that follows as the answer.
+  // Produces a FAQPage schema that Google shows as rich snippet and that
+  // LLM answer engines can lift verbatim.
+  const faqRegex = /^##\s+([^\n]+?)\s*\n+([\s\S]*?)(?=\n##\s|$)/gm
+  const questionStart = /^(Что|Когда|Почему|Как|Нужно|Сколько|Зачем|Стоит|Можно|Какие|Какой|Какая)\b/i
+  const rawBody = article.body_md || ''
+  const faqPairs: { q: string; a: string }[] = []
+  let m: RegExpExecArray | null
+  while ((m = faqRegex.exec(rawBody)) !== null) {
+    const q = m[1].trim()
+    if (!q) continue
+    if (!(q.endsWith('?') || questionStart.test(q))) continue
+    // First paragraph of the answer — cut off at next empty line.
+    const ans = m[2]
+      .split(/\n\s*\n/)[0]
+      ?.replace(/^\s*[-*]\s+/gm, '• ')
+      ?.replace(/\*\*/g, '')
+      ?.replace(/[#>`]/g, '')
+      ?.replace(/\s+/g, ' ')
+      ?.trim()
+      ?.slice(0, 500) || ''
+    if (ans.length < 40) continue
+    faqPairs.push({ q: q.replace(/\*\*/g, '').trim(), a: ans })
+    if (faqPairs.length >= 8) break
+  }
+
   const schemaOrg = {
     '@context': 'https://schema.org',
-    '@type': 'Article',
+    // MedicalWebPage inherits from Article but signals YMYL medical content
+    // — Google applies E-E-A-T weights to this type specifically.
+    '@type': ['Article', 'MedicalWebPage'],
     headline: article.title,
     description: article.meta_description,
     image: article.cover_image ? `${SITE_URL}${article.cover_image}` : undefined,
     datePublished: article.published_at,
     dateModified: article.published_at,
+    lastReviewed: article.published_at,
+    reviewedBy: {
+      '@type': 'Organization',
+      name: 'Редактор kinDAR · STAFF',
+      url: 'https://mama.kindar.app/about',
+    },
+    medicalAudience: {
+      '@type': 'MedicalAudience',
+      audienceType: 'Parent',
+    },
+    about: (article.tags || []).slice(0, 3).map((t: string) => ({ '@type': 'Thing', name: t })),
     mainEntityOfPage: {
       '@type': 'WebPage',
       '@id': `https://mama.kindar.app/articles/${slug}`,
@@ -279,6 +320,21 @@ export default async function ArticlePage({ params }: { params: { slug: string }
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
       />
+      {faqPairs.length >= 2 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'FAQPage',
+            inLanguage: 'ru',
+            mainEntity: faqPairs.map(({ q, a }) => ({
+              '@type': 'Question',
+              name: q,
+              acceptedAnswer: { '@type': 'Answer', text: a },
+            })),
+          })}}
+        />
+      )}
 
       {/* Breadcrumbs */}
       <nav className="article-breadcrumb">
